@@ -3,6 +3,11 @@ from openai import OpenAI
 import requests
 from typing import Dict, Any, Optional
 import time
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class GLP1Bot:
     def __init__(self):
@@ -20,7 +25,6 @@ class GLP1Bot:
             "Authorization": f"Bearer {self.pplx_api_key}",
             "Content-Type": "application/json"
         }
-        
         self.pplx_system_prompt = """
 You are a medical information assistant specialized in GLP-1 medications. Provide detailed, evidence-based information with an empathetic tone.
 Cover important aspects such as:
@@ -52,11 +56,10 @@ Add any missing critical information and correct any inaccuracies.
 Maintain a professional yet approachable tone, emphasizing both expertise and emotional support.
 """
 
-    def get_pplx_response(self, query: str) -> Optional[Dict[str, Any]]:
+   def get_pplx_response(self, query: str) -> Optional[str]:
         """Get initial response from PPLX API with timing"""
+        start_time = time.time()
         try:
-            start_time = time.time()
-            
             payload = {
                 "model": self.pplx_model,
                 "messages": [
@@ -73,24 +76,27 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                 json=payload
             )
             
-            end_time = time.time()
-            response_time = end_time - start_time
-            
             response.raise_for_status()
-            return {
-                "content": response.json()["choices"][0]["message"]["content"],
-                "response_time": response_time
-            }
+            result = response.json()["choices"][0]["message"]["content"]
+            
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            logger.info(f"PPLX Response Time: {elapsed_time:.2f} seconds")
+            st.sidebar.write(f"🕒 PPLX Response Time: {elapsed_time:.2f} seconds")
+            
+            return result
             
         except Exception as e:
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            logger.error(f"PPLX Error ({elapsed_time:.2f}s): {str(e)}")
             st.error(f"Error communicating with PPLX: {str(e)}")
             return None
 
-    def validate_with_gpt(self, pplx_response: str, original_query: str) -> Optional[Dict[str, Any]]:
+    def validate_with_gpt(self, pplx_response: str, original_query: str) -> Optional[str]:
         """Validate and enhance PPLX response using GPT with timing"""
+        start_time = time.time()
         try:
-            start_time = time.time()
-            
             validation_prompt = f"""
             Original query: {original_query}
             
@@ -111,15 +117,19 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                 max_tokens=1500
             )
             
-            end_time = time.time()
-            response_time = end_time - start_time
+            result = completion.choices[0].message.content
             
-            return {
-                "content": completion.choices[0].message.content,
-                "response_time": response_time
-            }
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            logger.info(f"GPT Validation Time: {elapsed_time:.2f} seconds")
+            st.sidebar.write(f"🕒 GPT Validation Time: {elapsed_time:.2f} seconds")
+            
+            return result
             
         except Exception as e:
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            logger.error(f"GPT Error ({elapsed_time:.2f}s): {str(e)}")
             st.error(f"Error validating with GPT: {str(e)}")
             return None
 
@@ -162,8 +172,9 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                 return category
         return "general"
 
-    def process_query(self, user_query: str) -> Dict[str, Any]:
-        """Process user query through both PPLX and GPT"""
+     def process_query(self, user_query: str) -> Dict[str, Any]:
+        """Process user query through both PPLX and GPT with total time tracking"""
+        total_start_time = time.time()
         try:
             if not user_query.strip():
                 return {
@@ -171,60 +182,58 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                     "message": "Please enter a valid question."
                 }
             
-            # Step 1: Get initial response from PPLX with timing
-            with st.spinner('🔍 Retrieving information from medical knowledge base...'):
-                pplx_result = self.get_pplx_response(user_query)
+            # Add timing information to the sidebar
+            st.sidebar.markdown("### Response Time Metrics")
             
-            if not pplx_result:
+            # Step 1: Get initial response from PPLX
+            with st.spinner('🔍 Retrieving information from medical knowledge base...'):
+                pplx_response = self.get_pplx_response(user_query)
+            
+            if not pplx_response:
                 return {
                     "status": "error",
                     "message": "Failed to retrieve information from knowledge base."
                 }
             
-            # Step 2: Validate and enhance with GPT with timing
+            # Step 2: Validate and enhance with GPT
             with st.spinner('✅ Validating and enhancing information...'):
-                gpt_result = self.validate_with_gpt(pplx_result["content"], user_query)
+                validated_response = self.validate_with_gpt(pplx_response, user_query)
             
-            if not gpt_result:
+            if not validated_response:
                 return {
                     "status": "error",
                     "message": "Failed to validate information."
                 }
             
-            # Format final response and include timing information
-            query_category = self.categorize_query(user_query)
-            formatted_response = self.format_response(gpt_result["content"])
+            # Calculate and display total processing time
+            total_end_time = time.time()
+            total_elapsed_time = total_end_time - total_start_time
+            logger.info(f"Total Processing Time: {total_elapsed_time:.2f} seconds")
+            st.sidebar.write(f"⏱️ Total Processing Time: {total_elapsed_time:.2f} seconds")
             
-            # Create timing metrics container
-            with st.container():
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("PPLX API Time", f"{pplx_result['response_time']:.2f}s")
-                with col2:
-                    st.metric("GPT API Time", f"{gpt_result['response_time']:.2f}s")
-                with col3:
-                    total_time = pplx_result['response_time'] + gpt_result['response_time']
-                    st.metric("Total Processing Time", f"{total_time:.2f}s")
+            # Format final response
+            query_category = self.categorize_query(user_query)
+            formatted_response = self.format_response(validated_response)
             
             return {
                 "status": "success",
                 "query_category": query_category,
                 "original_query": user_query,
-                "pplx_response": pplx_result["content"],
+                "pplx_response": pplx_response,
                 "response": formatted_response,
                 "timing": {
-                    "pplx_time": pplx_result["response_time"],
-                    "gpt_time": gpt_result["response_time"],
-                    "total_time": total_time
+                    "total_time": total_elapsed_time
                 }
             }
             
         except Exception as e:
+            total_end_time = time.time()
+            total_elapsed_time = total_end_time - total_start_time
+            logger.error(f"Total Error ({total_elapsed_time:.2f}s): {str(e)}")
             return {
                 "status": "error",
                 "message": f"Error processing query: {str(e)}"
             }
-
 def set_page_style():
     """Set page style using custom CSS"""
     st.markdown("""
