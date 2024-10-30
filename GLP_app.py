@@ -151,7 +151,7 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                 "status": "success",
                 "query_category": query_category,
                 "original_query": user_query,
-                "pplx_response": pplx_response, 
+                "pplx_response": pplx_response,  # Optional: for debugging
                 "response": formatted_response
             }
             
@@ -261,28 +261,28 @@ def main():
         # Main chat interface
         with st.container():
             user_input = st.text_input(
-                "Ask your question about GLP-1 medications (press Enter to search):",
+                "Ask your question about GLP-1 medications:",
                 key="user_input",
-                placeholder="e.g., What are the common side effects of GLP-1 medications?",
-                on_change=lambda: process_input() if st.session_state.user_input else None
+                placeholder="e.g., What are the common side effects of GLP-1 medications?"
             )
             
-            def process_input():
-                """Process the user input when Enter is pressed"""
-                if st.session_state.user_input:
-                    response = bot.process_query(st.session_state.user_input)
+            submit_button = st.button("Get Answer", key="submit", use_container_width=True)
+            
+            if submit_button:
+                if user_input:
+                    response = bot.process_query(user_input)
                     
                     if response["status"] == "success":
                         # Add to chat history
                         st.session_state.chat_history.append({
-                            "query": st.session_state.user_input,
+                            "query": user_input,
                             "response": response
                         })
                         
                         # Display current response
                         st.markdown(f"""
                         <div class="chat-message user-message">
-                            <b>Your Question:</b><br>{st.session_state.user_input}
+                            <b>Your Question:</b><br>{user_input}
                         </div>
                         """, unsafe_allow_html=True)
                         
@@ -296,10 +296,6 @@ def main():
                         st.error(response["message"])
                 else:
                     st.warning("Please enter a question.")
-            
-            # Process initial input if Enter was pressed
-            if user_input:
-                process_input()
         
         # Display chat history
         if st.session_state.chat_history:
