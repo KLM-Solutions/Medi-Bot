@@ -396,5 +396,4 @@ def main():
                             cols[2].metric("Total Time", f"{timing['total_time']:.2f}s")
                     else:
                         st.error(response["message"])
-                else:
-                    st.warning("Please enter a question.")
+               
