@@ -13,7 +13,7 @@ class GLP1Bot:
             api_key=st.secrets["openai"]["api_key"]
         )
         self.pplx_api_key = st.secrets["pplx"]["api_key"]
-        self.pplx_model = st.secrets["pplx"].get("model", "medical-pplx")  # Replace with your PPLX model
+        self.pplx_model = st.secrets["pplx"].get("model", "medical-pplx")  
         
         self.pplx_headers = {
             "Authorization": f"Bearer {self.pplx_api_key}",
@@ -29,7 +29,7 @@ Format your response with:
 3. A encouraging closing that reinforces their healthcare journey
 Focus on medical accuracy while maintaining a compassionate tone throughout.
 """
-       self.gpt_validation_prompt = """
+        self.gpt_validation_prompt = """
 You are a medical content validator. Review and enhance the information about GLP-1 medications.
 Maintain a professional yet approachable tone, emphasizing both expertise and emotional support.
 """
