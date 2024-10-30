@@ -266,7 +266,9 @@ def main():
                 placeholder="e.g., What are the common side effects of GLP-1 medications?"
             )
             
-            submit_button = st.button("Get Answer", key="submit", use_container_width=True)
+            col1, col2 = st.columns([1, 5])
+            with col1:
+                submit_button = st.button("Get Answer", key="submit")
             
             if submit_button:
                 if user_input:
