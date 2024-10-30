@@ -115,7 +115,7 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
             completion = self.openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": self.validation_prompt},
+                    {"role": "system", "content": self.gpt_validation_prompt},
                     {"role": "user", "content": validation_input}
                 ],
                 temperature=0.1
