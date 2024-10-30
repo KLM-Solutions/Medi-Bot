@@ -2,6 +2,12 @@ import streamlit as st
 from openai import OpenAI
 import requests
 from typing import Dict, Any, Optional
+import time
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class GLP1Bot:
     def __init__(self):
@@ -20,15 +26,6 @@ class GLP1Bot:
             "Content-Type": "application/json"
         }
         
-        # Prompt for reframing questions
-        self.reframe_prompt = """You are a medical query optimizer. Your task is to:
-        1. Reframe the user's question to be more specific and medically precise
-        2. Ensure the question captures all relevant medical context
-        3. Structure the question to elicit a comprehensive medical response
-        4. Maintain the original intent while using proper medical terminology
-        
-        Reframe the following question while keeping it concise and focused."""
-
         self.pplx_system_prompt = """
 You are a medical information assistant specialized in GLP-1 medications. Provide detailed, evidence-based information with an empathetic tone.
 Cover important aspects such as:
@@ -45,7 +42,6 @@ Format your response with:
 3. A encouraging closing that reinforces their healthcare journey
 Focus on medical accuracy while maintaining a compassionate tone throughout.
 """
-        
         self.gpt_validation_prompt = """
 You are a medical content validator. Review and enhance the following information about GLP-1 medications.
 Ensure the response is:
@@ -61,30 +57,15 @@ Add any missing critical information and correct any inaccuracies.
 Maintain a professional yet approachable tone, emphasizing both expertise and emotional support.
 """
 
-    def reframe_question(self, original_query: str) -> str:
-        """Reframe the user's question using GPT-4o-mini"""
-        try:
-            completion = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": self.reframe_prompt},
-                    {"role": "user", "content": original_query}
-                ],
-                temperature=0.1
-            )
-            return completion.choices[0].message.content
-        except Exception as e:
-            st.error(f"Error reframing question: {str(e)}")
-            return original_query
-
-    def get_pplx_response(self, reframed_query: str) -> Optional[str]:
-        """Get response from PPLX API"""
+    def get_pplx_response(self, query: str) -> Optional[str]:
+        """Get initial response from PPLX API with timing"""
+        start_time = time.time()
         try:
             payload = {
                 "model": self.pplx_model,
                 "messages": [
                     {"role": "system", "content": self.pplx_system_prompt},
-                    {"role": "user", "content": reframed_query}
+                    {"role": "user", "content": query}
                 ],
                 "temperature": 0.1,
                 "max_tokens": 1000
@@ -97,40 +78,61 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
             )
             
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
+            result = response.json()["choices"][0]["message"]["content"]
+            
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            logger.info(f"PPLX Response Time: {elapsed_time:.2f} seconds")
+            st.sidebar.write(f"🕒 PPLX Response Time: {elapsed_time:.2f} seconds")
+            
+            return result
+            
         except Exception as e:
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            logger.error(f"PPLX Error ({elapsed_time:.2f}s): {str(e)}")
             st.error(f"Error communicating with PPLX: {str(e)}")
             return None
 
-    def validate_response(self, reframed_query: str, pplx_response: str) -> tuple[bool, str]:
-        """Validate the response against the reframed question using GPT-4o-mini"""
+    def validate_with_gpt(self, pplx_response: str, original_query: str) -> Optional[str]:
+        """Validate and enhance PPLX response using GPT with timing"""
+        start_time = time.time()
         try:
-            validation_input = f"""
-            Reframed Question: {reframed_query}
+            validation_prompt = f"""
+            Original query: {original_query}
             
-            Response to validate:
+            PPLX Response to validate:
             {pplx_response}
+            
+            Please validate and enhance this response according to medical standards and best practices.
+            Ensure all information is accurate and properly structured.
             """
             
             completion = self.openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": self.gpt_validation_prompt},
-                    {"role": "user", "content": validation_input}
+                    {"role": "user", "content": validation_prompt}
                 ],
-                temperature=0.1
+                temperature=0.1,
+                max_tokens=1500
             )
             
-            validation_result = completion.choices[0].message.content
-            is_valid = validation_result.startswith("VALID")
+            result = completion.choices[0].message.content
             
-            if is_valid:
-                return True, validation_result[6:].strip()  # Remove "VALID" prefix
-            return False, validation_result
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            logger.info(f"GPT Validation Time: {elapsed_time:.2f} seconds")
+            st.sidebar.write(f"🕒 GPT Validation Time: {elapsed_time:.2f} seconds")
+            
+            return result
             
         except Exception as e:
-            st.error(f"Error validating response: {str(e)}")
-            return False, str(e)
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            logger.error(f"GPT Error ({elapsed_time:.2f}s): {str(e)}")
+            st.error(f"Error validating with GPT: {str(e)}")
+            return None
 
     def format_response(self, response: str) -> str:
         """Format the response with safety disclaimer"""
@@ -148,10 +150,32 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
         - Never modify your medication regimen without professional guidance
         """
         
-        return response + safety_disclaimer
+        if "disclaimer" not in response.lower():
+            response += safety_disclaimer
+            
+        return response
+
+    def categorize_query(self, query: str) -> str:
+        """Categorize the user query"""
+        categories = {
+            "dosage": ["dose", "dosage", "how to take", "when to take", "injection", "administration"],
+            "side_effects": ["side effect", "adverse", "reaction", "problem", "issues", "symptoms"],
+            "benefits": ["benefit", "advantage", "help", "work", "effect", "weight", "glucose"],
+            "storage": ["store", "storage", "keep", "refrigerate", "temperature"],
+            "lifestyle": ["diet", "exercise", "lifestyle", "food", "alcohol", "eating"],
+            "interactions": ["interaction", "drug", "medication", "combine", "mixing"],
+            "cost": ["cost", "price", "insurance", "coverage", "afford"]
+        }
+        
+        query_lower = query.lower()
+        for category, keywords in categories.items():
+            if any(keyword in query_lower for keyword in keywords):
+                return category
+        return "general"
 
     def process_query(self, user_query: str) -> Dict[str, Any]:
-        """Process user query through the new streamlined workflow"""
+        """Process user query through both PPLX and GPT with total time tracking"""
+        total_start_time = time.time()
         try:
             if not user_query.strip():
                 return {
@@ -159,48 +183,132 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                     "message": "Please enter a valid question."
                 }
             
-            # Step 1: Reframe the question
-            with st.spinner('🤔 Reframing your question...'):
-                reframed_query = self.reframe_question(user_query)
-                if not reframed_query:
-                    return {
-                        "status": "error",
-                        "message": "Failed to reframe the question."
-                    }
+            # Add timing information to the sidebar
+            st.sidebar.markdown("### Response Time Metrics")
             
-            # Step 2: Get PPLX response
-            with st.spinner('🔍 Getting medical information...'):
-                pplx_response = self.get_pplx_response(reframed_query)
-                if not pplx_response:
-                    return {
-                        "status": "error",
-                        "message": "Failed to retrieve medical information."
-                    }
+            # Step 1: Get initial response from PPLX
+            with st.spinner('🔍 Retrieving information from medical knowledge base...'):
+                pplx_response = self.get_pplx_response(user_query)
             
-            # Step 3: Validate response
-            with st.spinner('✅ Validating response...'):
-                is_valid, validated_response = self.validate_response(reframed_query, pplx_response)
-                if not is_valid:
-                    return {
-                        "status": "error",
-                        "message": f"Response validation failed: {validated_response}"
-                    }
+            if not pplx_response:
+                return {
+                    "status": "error",
+                    "message": "Failed to retrieve information from knowledge base."
+                }
             
-            # Step 4: Format and return response
+            # Step 2: Validate and enhance with GPT
+            with st.spinner('✅ Validating and enhancing information...'):
+                validated_response = self.validate_with_gpt(pplx_response, user_query)
+            
+            if not validated_response:
+                return {
+                    "status": "error",
+                    "message": "Failed to validate information."
+                }
+            
+            # Calculate and display total processing time
+            total_end_time = time.time()
+            total_elapsed_time = total_end_time - total_start_time
+            logger.info(f"Total Processing Time: {total_elapsed_time:.2f} seconds")
+            st.sidebar.write(f"⏱️ Total Processing Time: {total_elapsed_time:.2f} seconds")
+            
+            # Format final response
+            query_category = self.categorize_query(user_query)
             formatted_response = self.format_response(validated_response)
             
             return {
                 "status": "success",
+                "query_category": query_category,
                 "original_query": user_query,
-                "reframed_query": reframed_query,
-                "response": formatted_response
+                "pplx_response": pplx_response,
+                "response": formatted_response,
+                "timing": {
+                    "total_time": total_elapsed_time
+                }
             }
             
         except Exception as e:
+            total_end_time = time.time()
+            total_elapsed_time = total_end_time - total_start_time
+            logger.error(f"Total Error ({total_elapsed_time:.2f}s): {str(e)}")
             return {
                 "status": "error",
                 "message": f"Error processing query: {str(e)}"
             }
+
+def set_page_style():
+    """Set page style using custom CSS"""
+    st.markdown("""
+    <style>
+        .main {
+            background-color: #f5f5f5;
+        }
+        .stTextInput>div>div>input {
+            background-color: white;
+        }
+        .chat-message {
+            padding: 1.5rem;
+            border-radius: 0.8rem;
+            margin: 1rem 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            border-left: 4px solid #1976d2;
+        }
+        .bot-message {
+            background-color: #f5f5f5;
+            border-left: 4px solid #43a047;
+        }
+        .category-tag {
+            background-color: #2196f3;
+            color: white;
+            padding: 0.2rem 0.6rem;
+            border-radius: 1rem;
+            font-size: 0.8rem;
+            margin-bottom: 0.5rem;
+            display: inline-block;
+        }
+        .stAlert {
+            background-color: #ff5252;
+            color: white;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+        }
+        .disclaimer {
+            background-color: #fff3e0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border-left: 4px solid #ff9800;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }
+        .info-box {
+            background-color: #e8f5e9;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+        }
+        .processing-status {
+            color: #1976d2;
+            font-style: italic;
+            margin: 0.5rem 0;
+        }
+        .metrics-sidebar {
+            background-color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
+        .timing-metric {
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            border-radius: 0.3rem;
+            background-color: #e9ecef;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
 def main():
     """Main application function"""
@@ -211,12 +319,24 @@ def main():
             layout="wide"
         )
         
+        set_page_style()
+        
+        # Check for API keys
+        if 'openai' not in st.secrets or 'pplx' not in st.secrets:
+            st.error('Required API keys not found. Please configure both OpenAI and PPLX API keys in your secrets.')
+            st.stop()
+        
         st.title("💊 GLP-1 Medication Information Assistant")
         st.markdown("""
+        <div class="info-box">
         Get accurate, validated information about GLP-1 medications, their usage, benefits, and side effects.
+        This assistant uses a two-stage process:
+        1. Retrieves specialized medical information
+        2. Validates and enhances the information for accuracy
         
-        *Please note: This assistant provides general information only. Always consult your healthcare provider for medical advice.*
-        """)
+        <em>Please note: This assistant provides general information only. Always consult your healthcare provider for medical advice.</em>
+        </div>
+        """, unsafe_allow_html=True)
         
         # Initialize bot
         bot = GLP1Bot()
@@ -225,54 +345,83 @@ def main():
         if 'chat_history' not in st.session_state:
             st.session_state.chat_history = []
         
+        # Create sidebar for metrics
+        st.sidebar.markdown("### Performance Metrics")
+        st.sidebar.markdown('<div class="metrics-sidebar">Response times will appear here during processing</div>', unsafe_allow_html=True)
+        
         # Main chat interface
-        user_input = st.text_input(
-            "Ask your question about GLP-1 medications:",
-            key="user_input",
-            placeholder="e.g., What are the common side effects of GLP-1 medications?"
-        )
-        
-        if st.button("Get Answer", key="submit"):
-            if user_input:
-                response = bot.process_query(user_input)
-                
-                if response["status"] == "success":
-                    # Display reframed question
-                    st.markdown("#### How I understood your question:")
-                    st.info(response["reframed_query"])
+        with st.container():
+            user_input = st.text_input(
+                "Ask your question about GLP-1 medications:",
+                key="user_input",
+                placeholder="e.g., What are the common side effects of GLP-1 medications?"
+            )
+            
+            col1, col2 = st.columns([1, 5])
+            with col1:
+                submit_button = st.button("Get Answer", key="submit", use_container_width=True)
+            with col2:
+                if st.button("Clear History", key="clear", use_container_width=True):
+                    st.session_state.chat_history = []
+                    st.experimental_rerun()
+            
+            if submit_button:
+                if user_input:
+                    response = bot.process_query(user_input)
                     
-                    # Display response
-                    st.markdown("#### Response:")
-                    st.write(response["response"])
-                    
-                    # Add to chat history
-                    st.session_state.chat_history.append(response)
+                    if response["status"] == "success":
+                        # Add to chat history
+                        st.session_state.chat_history.append({
+                            "query": user_input,
+                            "response": response
+                        })
+                        
+                        # Display current response
+                        st.markdown(f"""
+                        <div class="chat-message user-message">
+                            <b>Your Question:</b><br>{user_input}
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        st.markdown(f"""
+                        <div class="chat-message bot-message">
+                            <div class="category-tag">{response["query_category"].upper()}</div><br>
+                            <b>Response:</b><br>{response["response"]}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.error(response["message"])
                 else:
-                    st.error(response["message"])
-            else:
-                st.warning("Please enter a question.")
-        
-        # Clear history button
-        if st.button("Clear History") and st.session_state.chat_history:
-            st.session_state.chat_history = []
-            st.experimental_rerun()
+                    st.warning("Please enter a question.")
         
         # Display chat history
         if st.session_state.chat_history:
             st.markdown("---")
             st.markdown("### Previous Questions")
             for i, chat in enumerate(reversed(st.session_state.chat_history[:-1]), 1):
-                with st.expander(f"Question {len(st.session_state.chat_history) - i}"):
-                    st.markdown("**Original Question:**")
-                    st.write(chat["original_query"])
-                    st.markdown("**Reframed Question:**")
-                    st.info(chat["reframed_query"])
-                    st.markdown("**Response:**")
-                    st.write(chat["response"])
-
+                with st.expander(f"Question {len(st.session_state.chat_history) - i}: {chat['query'][:50]}..."):
+                    st.markdown(f"""
+                    <div class="chat-message user-message">
+                        <b>Your Question:</b><br>{chat['query']}
+                    </div>
+                    <div class="chat-message bot-message">
+                        <div class="category-tag">{chat['response']['query_category'].upper()}</div><br>
+                        <b>Response:</b><br>{chat['response']['response']}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Display timing metrics in history if available
+                    if 'timing' in chat['response']:
+                        st.markdown("""
+                        <div class="timing-metric">
+                        ⏱️ Processing Time: {:.2f} seconds
+                        </div>
+                        """.format(chat['response']['timing']['total_time']), unsafe_allow_html=True)
+    
     except Exception as e:
         st.error(f"An unexpected error occurred: {str(e)}")
         st.error("Please refresh the page and try again.")
+        logger.error(f"Application Error: {str(e)}")
 
 if __name__ == "__main__":
     main()
