@@ -172,7 +172,7 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                 return category
         return "general"
 
-     def process_query(self, user_query: str) -> Dict[str, Any]:
+      def process_query(self, user_query: str) -> Dict[str, Any]:
         """Process user query through both PPLX and GPT with total time tracking"""
         total_start_time = time.time()
         try:
