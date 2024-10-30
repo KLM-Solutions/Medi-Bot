@@ -34,7 +34,7 @@ class GLP1Bot:
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": query}
                 ],
-                temperature=0.3,
+                temperature=0.1,
                 max_tokens=1000
             )
             
