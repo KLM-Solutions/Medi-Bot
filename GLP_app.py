@@ -25,6 +25,7 @@ class GLP1Bot:
             "Authorization": f"Bearer {self.pplx_api_key}",
             "Content-Type": "application/json"
         }
+        
         self.pplx_system_prompt = """
 You are a medical information assistant specialized in GLP-1 medications. Provide detailed, evidence-based information with an empathetic tone.
 Cover important aspects such as:
@@ -172,7 +173,7 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                 return category
         return "general"
 
-      def process_query(self, user_query: str) -> Dict[str, Any]:
+    def process_query(self, user_query: str) -> Dict[str, Any]:
         """Process user query through both PPLX and GPT with total time tracking"""
         total_start_time = time.time()
         try:
@@ -234,6 +235,7 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                 "status": "error",
                 "message": f"Error processing query: {str(e)}"
             }
+
 def set_page_style():
     """Set page style using custom CSS"""
     st.markdown("""
@@ -293,29 +295,17 @@ def set_page_style():
             font-style: italic;
             margin: 0.5rem 0;
         }
-        .metrics-container {
+        .metrics-sidebar {
             background-color: #f8f9fa;
             padding: 1rem;
             border-radius: 0.5rem;
-            margin: 1rem 0;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-top: 1rem;
         }
-        .metric-card {
-            background-color: white;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            text-align: center;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-        .metric-value {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #1976d2;
-        }
-        .metric-label {
-            font-size: 0.9rem;
-            color: #666;
-            margin-top: 0.5rem;
+        .timing-metric {
+            padding: 0.5rem;
+            margin: 0.5rem 0;
+            border-radius: 0.3rem;
+            background-color: #e9ecef;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -341,8 +331,8 @@ def main():
         <div class="info-box">
         Get accurate, validated information about GLP-1 medications, their usage, benefits, and side effects.
         This assistant uses a two-stage process:
-        1. Retrieves specialized medical information (PPLX API)
-        2. Validates and enhances the information for accuracy (GPT API)
+        1. Retrieves specialized medical information
+        2. Validates and enhances the information for accuracy
         
         <em>Please note: This assistant provides general information only. Always consult your healthcare provider for medical advice.</em>
         </div>
@@ -354,6 +344,10 @@ def main():
         # Create session state for chat history if it doesn't exist
         if 'chat_history' not in st.session_state:
             st.session_state.chat_history = []
+        
+        # Create sidebar for metrics
+        st.sidebar.markdown("### Performance Metrics")
+        st.sidebar.markdown('<div class="metrics-sidebar">Response times will appear here during processing</div>', unsafe_allow_html=True)
         
         # Main chat interface
         with st.container():
@@ -395,14 +389,39 @@ def main():
                             <b>Response:</b><br>{response["response"]}
                         </div>
                         """, unsafe_allow_html=True)
-                        
-                        # Display timing metrics in an organized way
-                        with st.expander("View Processing Times"):
-                            timing = response["timing"]
-                            cols = st.columns(3)
-                            cols[0].metric("PPLX API Time", f"{timing['pplx_time']:.2f}s")
-                            cols[1].metric("GPT API Time", f"{timing['gpt_time']:.2f}s")
-                            cols[2].metric("Total Time", f"{timing['total_time']:.2f}s")
                     else:
                         st.error(response["message"])
-               
+                else:
+                    st.warning("Please enter a question.")
+        
+        # Display chat history
+        if st.session_state.chat_history:
+            st.markdown("---")
+            st.markdown("### Previous Questions")
+            for i, chat in enumerate(reversed(st.session_state.chat_history[:-1]), 1):
+                with st.expander(f"Question {len(st.session_state.chat_history) - i}: {chat['query'][:50]}..."):
+                    st.markdown(f"""
+                    <div class="chat-message user-message">
+                        <b>Your Question:</b><br>{chat['query']}
+                    </div>
+                    <div class="chat-message bot-message">
+                        <div class="category-tag">{chat['response']['query_category'].upper()}</div><br>
+                        <b>Response:</b><br>{chat['response']['response']}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Display timing metrics in history if available
+                    if 'timing' in chat['response']:
+                        st.markdown("""
+                        <div class="timing-metric">
+                        ⏱️ Processing Time: {:.2f} seconds
+                        </div>
+                        """.format(chat['response']['timing']['total_time']), unsafe_allow_html=True)
+    
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {str(e)}")
+        st.error("Please refresh the page and try again.")
+        logger.error(f"Application Error: {str(e)}")
+
+if __name__ == "__main__":
+    main()
