@@ -122,20 +122,6 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
         if not response:
             return "I apologize, but I couldn't generate a response at this time. Please try again."
             
-        safety_disclaimer = """
-        
-        IMPORTANT MEDICAL DISCLAIMER:
-        - This information is for educational purposes only
-        - Consult your healthcare provider for personalized medical advice
-        - Follow your prescribed treatment plan
-        - Report any side effects to your healthcare provider
-        - Individual results may vary
-        - Never modify your medication regimen without professional guidance
-        """
-        
-        if "disclaimer" not in response.lower():
-            response += safety_disclaimer
-            
         return response
 
     def categorize_query(self, query: str) -> str:
