@@ -36,7 +36,7 @@ Format your response with:
 3. A encouraging closing that reinforces their healthcare journey
 Focus on medical accuracy while maintaining a compassionate tone throughout.
 """
-       self.gpt_validation_prompt = """
+        self.gpt_validation_prompt = """
 You are a medical content validator. Review and enhance the following information about GLP-1 medications.
 Ensure the response is:
 1. Medically accurate and evidence-based
