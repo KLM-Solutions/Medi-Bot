@@ -2,6 +2,7 @@ import streamlit as st
 from openai import OpenAI
 import requests
 from typing import Dict, Any, Optional
+import time
 
 class GLP1Bot:
     def __init__(self):
@@ -13,7 +14,7 @@ class GLP1Bot:
             api_key=st.secrets["openai"]["api_key"]
         )
         self.pplx_api_key = st.secrets["pplx"]["api_key"]
-        self.pplx_model = st.secrets["pplx"].get("model", "medical-pplx")  # Replace with your PPLX model
+        self.pplx_model = st.secrets["pplx"].get("model", "medical-pplx")
         
         self.pplx_headers = {
             "Authorization": f"Bearer {self.pplx_api_key}",
@@ -51,9 +52,11 @@ Add any missing critical information and correct any inaccuracies.
 Maintain a professional yet approachable tone, emphasizing both expertise and emotional support.
 """
 
-    def get_pplx_response(self, query: str) -> Optional[str]:
-        """Get initial response from PPLX API"""
+    def get_pplx_response(self, query: str) -> Optional[Dict[str, Any]]:
+        """Get initial response from PPLX API with timing"""
         try:
+            start_time = time.time()
+            
             payload = {
                 "model": self.pplx_model,
                 "messages": [
@@ -70,16 +73,24 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                 json=payload
             )
             
+            end_time = time.time()
+            response_time = end_time - start_time
+            
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
+            return {
+                "content": response.json()["choices"][0]["message"]["content"],
+                "response_time": response_time
+            }
             
         except Exception as e:
             st.error(f"Error communicating with PPLX: {str(e)}")
             return None
 
-    def validate_with_gpt(self, pplx_response: str, original_query: str) -> Optional[str]:
-        """Validate and enhance PPLX response using GPT"""
+    def validate_with_gpt(self, pplx_response: str, original_query: str) -> Optional[Dict[str, Any]]:
+        """Validate and enhance PPLX response using GPT with timing"""
         try:
+            start_time = time.time()
+            
             validation_prompt = f"""
             Original query: {original_query}
             
@@ -91,7 +102,7 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
             """
             
             completion = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",  
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": self.gpt_validation_prompt},
                     {"role": "user", "content": validation_prompt}
@@ -100,7 +111,13 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                 max_tokens=1500
             )
             
-            return completion.choices[0].message.content
+            end_time = time.time()
+            response_time = end_time - start_time
+            
+            return {
+                "content": completion.choices[0].message.content,
+                "response_time": response_time
+            }
             
         except Exception as e:
             st.error(f"Error validating with GPT: {str(e)}")
@@ -154,36 +171,52 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                     "message": "Please enter a valid question."
                 }
             
-            # Step 1: Get initial response from PPLX
+            # Step 1: Get initial response from PPLX with timing
             with st.spinner('🔍 Retrieving information from medical knowledge base...'):
-                pplx_response = self.get_pplx_response(user_query)
+                pplx_result = self.get_pplx_response(user_query)
             
-            if not pplx_response:
+            if not pplx_result:
                 return {
                     "status": "error",
                     "message": "Failed to retrieve information from knowledge base."
                 }
             
-            # Step 2: Validate and enhance with GPT
+            # Step 2: Validate and enhance with GPT with timing
             with st.spinner('✅ Validating and enhancing information...'):
-                validated_response = self.validate_with_gpt(pplx_response, user_query)
+                gpt_result = self.validate_with_gpt(pplx_result["content"], user_query)
             
-            if not validated_response:
+            if not gpt_result:
                 return {
                     "status": "error",
                     "message": "Failed to validate information."
                 }
             
-            # Format final response
+            # Format final response and include timing information
             query_category = self.categorize_query(user_query)
-            formatted_response = self.format_response(validated_response)
+            formatted_response = self.format_response(gpt_result["content"])
+            
+            # Create timing metrics container
+            with st.container():
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("PPLX API Time", f"{pplx_result['response_time']:.2f}s")
+                with col2:
+                    st.metric("GPT API Time", f"{gpt_result['response_time']:.2f}s")
+                with col3:
+                    total_time = pplx_result['response_time'] + gpt_result['response_time']
+                    st.metric("Total Processing Time", f"{total_time:.2f}s")
             
             return {
                 "status": "success",
                 "query_category": query_category,
                 "original_query": user_query,
-                "pplx_response": pplx_response,  # Optional: for debugging
-                "response": formatted_response
+                "pplx_response": pplx_result["content"],
+                "response": formatted_response,
+                "timing": {
+                    "pplx_time": pplx_result["response_time"],
+                    "gpt_time": gpt_result["response_time"],
+                    "total_time": total_time
+                }
             }
             
         except Exception as e:
@@ -251,6 +284,30 @@ def set_page_style():
             font-style: italic;
             margin: 0.5rem 0;
         }
+        .metrics-container {
+            background-color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .metric-card {
+            background-color: white;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #1976d2;
+        }
+        .metric-label {
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 0.5rem;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -275,8 +332,8 @@ def main():
         <div class="info-box">
         Get accurate, validated information about GLP-1 medications, their usage, benefits, and side effects.
         This assistant uses a two-stage process:
-        1. Retrieves specialized medical information
-        2. Validates and enhances the information for accuracy
+        1. Retrieves specialized medical information (PPLX API)
+        2. Validates and enhances the information for accuracy (GPT API)
         
         <em>Please note: This assistant provides general information only. Always consult your healthcare provider for medical advice.</em>
         </div>
@@ -329,30 +386,15 @@ def main():
                             <b>Response:</b><br>{response["response"]}
                         </div>
                         """, unsafe_allow_html=True)
+                        
+                        # Display timing metrics in an organized way
+                        with st.expander("View Processing Times"):
+                            timing = response["timing"]
+                            cols = st.columns(3)
+                            cols[0].metric("PPLX API Time", f"{timing['pplx_time']:.2f}s")
+                            cols[1].metric("GPT API Time", f"{timing['gpt_time']:.2f}s")
+                            cols[2].metric("Total Time", f"{timing['total_time']:.2f}s")
                     else:
                         st.error(response["message"])
                 else:
                     st.warning("Please enter a question.")
-        
-        # Display chat history
-        if st.session_state.chat_history:
-            st.markdown("---")
-            st.markdown("### Previous Questions")
-            for i, chat in enumerate(reversed(st.session_state.chat_history[:-1]), 1):
-                with st.expander(f"Question {len(st.session_state.chat_history) - i}: {chat['query'][:50]}..."):
-                    st.markdown(f"""
-                    <div class="chat-message user-message">
-                        <b>Your Question:</b><br>{chat['query']}
-                    </div>
-                    <div class="chat-message bot-message">
-                        <div class="category-tag">{chat['response']['query_category'].upper()}</div><br>
-                        <b>Response:</b><br>{chat['response']['response']}
-                    </div>
-                    """, unsafe_allow_html=True)
-    
-    except Exception as e:
-        st.error(f"An unexpected error occurred: {str(e)}")
-        st.error("Please refresh the page and try again.")
-
-if __name__ == "__main__":
-    main()
