@@ -56,7 +56,7 @@ Add any missing critical information and correct any inaccuracies.
 Maintain a professional yet approachable tone, emphasizing both expertise and emotional support.
 """
 
-   def get_pplx_response(self, query: str) -> Optional[str]:
+    def get_pplx_response(self, query: str) -> Optional[str]:
         """Get initial response from PPLX API with timing"""
         start_time = time.time()
         try:
