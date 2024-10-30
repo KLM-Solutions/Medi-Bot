@@ -13,14 +13,14 @@ class GLP1Bot:
             api_key=st.secrets["openai"]["api_key"]
         )
         self.pplx_api_key = st.secrets["pplx"]["api_key"]
-        self.pplx_model = st.secrets["pplx"].get("model", "medical-pplx") 
+        self.pplx_model = st.secrets["pplx"].get("model", "medical-pplx")  # Replace with your PPLX model
         
         self.pplx_headers = {
             "Authorization": f"Bearer {self.pplx_api_key}",
             "Content-Type": "application/json"
         }
         
-     self.pplx_system_prompt = """
+        self.pplx_system_prompt = """
 You are a medical information assistant specialized in GLP-1 medications. Provide detailed, evidence-based information with an empathetic tone.
 Cover important aspects such as:
 - Mechanism of action
@@ -36,7 +36,7 @@ Format your response with:
 3. A encouraging closing that reinforces their healthcare journey
 Focus on medical accuracy while maintaining a compassionate tone throughout.
 """
-self.gpt_validation_prompt = """
+       self.gpt_validation_prompt = """
 You are a medical content validator. Review and enhance the following information about GLP-1 medications.
 Ensure the response is:
 1. Medically accurate and evidence-based
