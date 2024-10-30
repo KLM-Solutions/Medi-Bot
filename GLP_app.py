@@ -29,7 +29,7 @@ class GLP1Bot:
         
         Reframe the following question while keeping it concise and focused."""
 
-       self.pplx_system_prompt = """
+        self.pplx_system_prompt = """
 You are a medical information assistant specialized in GLP-1 medications. Provide detailed, evidence-based information with an empathetic tone.
 Cover important aspects such as:
 - Mechanism of action
