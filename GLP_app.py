@@ -2,12 +2,6 @@ import streamlit as st
 from openai import OpenAI
 import requests
 from typing import Dict, Any, Optional
-import time
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 class GLP1Bot:
     def __init__(self):
@@ -19,30 +13,38 @@ class GLP1Bot:
             api_key=st.secrets["openai"]["api_key"]
         )
         self.pplx_api_key = st.secrets["pplx"]["api_key"]
-        self.pplx_model = st.secrets["pplx"].get("model", "medical-pplx")
+        self.pplx_model = st.secrets["pplx"].get("model", "medical-pplx")  # Replace with your PPLX model
         
         self.pplx_headers = {
             "Authorization": f"Bearer {self.pplx_api_key}",
             "Content-Type": "application/json"
         }
         
-        self.pplx_system_prompt = """
-You are a medical information assistant specialized in GLP-1 medications. Provide detailed, evidence-based information with an empathetic tone based on the user query for the GLP-1 drugs.
-
-Format your response with:
-1. An empathetic opening acknowledging the patient's situation
-2. Clear medical information based on the user query 
-3. A encouraging closing that reinforces their healthcare journey
-Focus on medical accuracy while maintaining a compassionate tone throughout.
-"""
-        self.gpt_validation_prompt = """
-You are a medical content validator. Review and enhance the information about GLP-1 medications.
-Maintain a professional yet approachable tone, emphasizing both expertise and emotional support.
-"""
+        self.pplx_system_prompt = """You are a medical information assistant specialized in GLP-1 medications. 
+        Provide detailed, evidence-based information about GLP-1 medications, focusing on medical accuracy.
+        Cover important aspects such as:
+        - Mechanism of action
+        - Proper usage and administration
+        - Expected outcomes and timeframes
+        - Potential side effects and management
+        - Drug interactions and contraindications
+        - Storage requirements
+        - Lifestyle modifications for optimal results"""
+        
+        self.gpt_validation_prompt = """You are a medical content validator. Review and enhance the following information about GLP-1 medications.
+        Ensure the response is:
+        1. Medically accurate and evidence-based
+        2. Well-structured with clear sections
+        3. Includes appropriate medical disclaimers
+        4. Easy to understand for patients
+        5. Comprehensive yet concise
+        6. Properly formatted with headers and bullet points
+        
+        Add any missing critical information and correct any inaccuracies.
+        Always maintain a professional yet approachable tone."""
 
     def get_pplx_response(self, query: str) -> Optional[str]:
-        """Get initial response from PPLX API with timing"""
-        start_time = time.time()
+        """Get initial response from PPLX API"""
         try:
             payload = {
                 "model": self.pplx_model,
@@ -61,25 +63,14 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
             )
             
             response.raise_for_status()
-            result = response.json()["choices"][0]["message"]["content"]
-            
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            logger.info(f"PPLX Response Time: {elapsed_time:.2f} seconds")
-            st.sidebar.write(f"🕒 PPLX Response Time: {elapsed_time:.2f} seconds")
-            
-            return result
+            return response.json()["choices"][0]["message"]["content"]
             
         except Exception as e:
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            logger.error(f"PPLX Error ({elapsed_time:.2f}s): {str(e)}")
             st.error(f"Error communicating with PPLX: {str(e)}")
             return None
 
     def validate_with_gpt(self, pplx_response: str, original_query: str) -> Optional[str]:
-        """Validate and enhance PPLX response using GPT with timing"""
-        start_time = time.time()
+        """Validate and enhance PPLX response using GPT"""
         try:
             validation_prompt = f"""
             Original query: {original_query}
@@ -92,7 +83,7 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
             """
             
             completion = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o-mini",  
                 messages=[
                     {"role": "system", "content": self.gpt_validation_prompt},
                     {"role": "user", "content": validation_prompt}
@@ -101,19 +92,9 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                 max_tokens=1500
             )
             
-            result = completion.choices[0].message.content
-            
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            logger.info(f"GPT Validation Time: {elapsed_time:.2f} seconds")
-            st.sidebar.write(f"🕒 GPT Validation Time: {elapsed_time:.2f} seconds")
-            
-            return result
+            return completion.choices[0].message.content
             
         except Exception as e:
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            logger.error(f"GPT Error ({elapsed_time:.2f}s): {str(e)}")
             st.error(f"Error validating with GPT: {str(e)}")
             return None
 
@@ -121,6 +102,20 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
         """Format the response with safety disclaimer"""
         if not response:
             return "I apologize, but I couldn't generate a response at this time. Please try again."
+            
+        safety_disclaimer = """
+        
+        IMPORTANT MEDICAL DISCLAIMER:
+        - This information is for educational purposes only
+        - Consult your healthcare provider for personalized medical advice
+        - Follow your prescribed treatment plan
+        - Report any side effects to your healthcare provider
+        - Individual results may vary
+        - Never modify your medication regimen without professional guidance
+        """
+        
+        if "disclaimer" not in response.lower():
+            response += safety_disclaimer
             
         return response
 
@@ -143,17 +138,13 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
         return "general"
 
     def process_query(self, user_query: str) -> Dict[str, Any]:
-        """Process user query through both PPLX and GPT with total time tracking"""
-        total_start_time = time.time()
+        """Process user query through both PPLX and GPT"""
         try:
             if not user_query.strip():
                 return {
                     "status": "error",
                     "message": "Please enter a valid question."
                 }
-            
-            # Add timing information to the sidebar
-            st.sidebar.markdown("### Response Time Metrics")
             
             # Step 1: Get initial response from PPLX
             with st.spinner('🔍 Retrieving information from medical knowledge base...'):
@@ -175,12 +166,6 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                     "message": "Failed to validate information."
                 }
             
-            # Calculate and display total processing time
-            total_end_time = time.time()
-            total_elapsed_time = total_end_time - total_start_time
-            logger.info(f"Total Processing Time: {total_elapsed_time:.2f} seconds")
-            st.sidebar.write(f"⏱️ Total Processing Time: {total_elapsed_time:.2f} seconds")
-            
             # Format final response
             query_category = self.categorize_query(user_query)
             formatted_response = self.format_response(validated_response)
@@ -189,17 +174,11 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                 "status": "success",
                 "query_category": query_category,
                 "original_query": user_query,
-                "pplx_response": pplx_response,
-                "response": formatted_response,
-                "timing": {
-                    "total_time": total_elapsed_time
-                }
+                "pplx_response": pplx_response,  # Optional: for debugging
+                "response": formatted_response
             }
             
         except Exception as e:
-            total_end_time = time.time()
-            total_elapsed_time = total_end_time - total_start_time
-            logger.error(f"Total Error ({total_elapsed_time:.2f}s): {str(e)}")
             return {
                 "status": "error",
                 "message": f"Error processing query: {str(e)}"
@@ -264,18 +243,6 @@ def set_page_style():
             font-style: italic;
             margin: 0.5rem 0;
         }
-        .metrics-sidebar {
-            background-color: #f8f9fa;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            margin-top: 1rem;
-        }
-        .timing-metric {
-            padding: 0.5rem;
-            margin: 0.5rem 0;
-            border-radius: 0.3rem;
-            background-color: #e9ecef;
-        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -313,10 +280,6 @@ def main():
         # Create session state for chat history if it doesn't exist
         if 'chat_history' not in st.session_state:
             st.session_state.chat_history = []
-        
-        # Create sidebar for metrics
-        st.sidebar.markdown("### Performance Metrics")
-        st.sidebar.markdown('<div class="metrics-sidebar">Response times will appear here during processing</div>', unsafe_allow_html=True)
         
         # Main chat interface
         with st.container():
@@ -378,19 +341,10 @@ def main():
                         <b>Response:</b><br>{chat['response']['response']}
                     </div>
                     """, unsafe_allow_html=True)
-                    
-                    # Display timing metrics in history if available
-                    if 'timing' in chat['response']:
-                        st.markdown("""
-                        <div class="timing-metric">
-                        ⏱️ Processing Time: {:.2f} seconds
-                        </div>
-                        """.format(chat['response']['timing']['total_time']), unsafe_allow_html=True)
     
     except Exception as e:
         st.error(f"An unexpected error occurred: {str(e)}")
         st.error("Please refresh the page and try again.")
-        logger.error(f"Application Error: {str(e)}")
 
 if __name__ == "__main__":
     main()
