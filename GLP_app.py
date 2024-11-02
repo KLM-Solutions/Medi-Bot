@@ -1,18 +1,17 @@
 import streamlit as st
-# from openai import OpenAI  # Commented out OpenAI import
+from openai import OpenAI
 import requests
 from typing import Dict, Any, Optional
 
 class GLP1Bot:
     def __init__(self):
-        """Initialize the GLP1Bot with PPLX client and system prompt"""
-        # if 'openai' not in st.secrets or 'pplx' not in st.secrets:  # Modified check for only PPLX
-        if 'pplx' not in st.secrets:
-            raise ValueError("PPLX API key not found in secrets")
+        """Initialize the GLP1Bot with both PPLX and OpenAI clients and system prompts"""
+        if 'openai' not in st.secrets or 'pplx' not in st.secrets:
+            raise ValueError("API keys not found in secrets")
             
-        # self.openai_client = OpenAI(  # Commented out OpenAI client initialization
-        #     api_key=st.secrets["openai"]["api_key"]
-        # )
+        self.openai_client = OpenAI(
+            api_key=st.secrets["openai"]["api_key"]
+        )
         self.pplx_api_key = st.secrets["pplx"]["api_key"]
         self.pplx_model = st.secrets["pplx"].get("model", "medical-pplx")  
         
@@ -29,23 +28,14 @@ Format your response with:
 2. Clear medical information based on the user query 
 3. A encouraging closing that reinforces their healthcare journey
 Focus on medical accuracy while maintaining a compassionate tone throughout.
-
-Always include:
-- Evidence-based information about GLP-1 medications
-- Clear structure with appropriate sections
-- Medical disclaimers when needed
-- Patient-friendly language
-- Comprehensive but concise explanations
-- Proper formatting with headers and bullet points when appropriate
 """
-        # Commented out GPT validation prompt
-        # self.gpt_validation_prompt = """
-        # You are a medical content validator. Review and enhance the information about GLP-1 medications.
-        # Maintain a professional yet approachable tone, emphasizing both expertise and emotional support.
-        # """
+        self.gpt_validation_prompt = """
+You are a medical content validator. Review and enhance the information about GLP-1 medications.
+Maintain a professional yet approachable tone, emphasizing both expertise and emotional support.
+"""
 
     def get_pplx_response(self, query: str) -> Optional[str]:
-        """Get response from PPLX API"""
+        """Get initial response from PPLX API"""
         try:
             payload = {
                 "model": self.pplx_model,
@@ -70,35 +60,34 @@ Always include:
             st.error(f"Error communicating with PPLX: {str(e)}")
             return None
 
-    # Commented out GPT validation method
-    # def validate_with_gpt(self, pplx_response: str, original_query: str) -> Optional[str]:
-    #     """Validate and enhance PPLX response using GPT"""
-    #     try:
-    #         validation_prompt = f"""
-    #         Original query: {original_query}
-    #         
-    #         PPLX Response to validate:
-    #         {pplx_response}
-    #         
-    #         Please validate and enhance this response according to medical standards and best practices.
-    #         Ensure all information is accurate and properly structured.
-    #         """
-    #         
-    #         completion = self.openai_client.chat.completions.create(
-    #             model="gpt-4o-mini",  
-    #             messages=[
-    #                 {"role": "system", "content": self.gpt_validation_prompt},
-    #                 {"role": "user", "content": validation_prompt}
-    #             ],
-    #             temperature=0.1,
-    #             max_tokens=1500
-    #         )
-    #         
-    #         return completion.choices[0].message.content
-    #         
-    #     except Exception as e:
-    #         st.error(f"Error validating with GPT: {str(e)}")
-    #         return None
+    def validate_with_gpt(self, pplx_response: str, original_query: str) -> Optional[str]:
+        """Validate and enhance PPLX response using GPT"""
+        try:
+            validation_prompt = f"""
+            Original query: {original_query}
+            
+            PPLX Response to validate:
+            {pplx_response}
+            
+            Please validate and enhance this response according to medical standards and best practices.
+            Ensure all information is accurate and properly structured.
+            """
+            
+            completion = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",  
+                messages=[
+                    {"role": "system", "content": self.gpt_validation_prompt},
+                    {"role": "user", "content": validation_prompt}
+                ],
+                temperature=0.1,
+                max_tokens=1500
+            )
+            
+            return completion.choices[0].message.content
+            
+        except Exception as e:
+            st.error(f"Error validating with GPT: {str(e)}")
+            return None
 
     def format_response(self, response: str) -> str:
         """Format the response with safety disclaimer"""
@@ -107,11 +96,26 @@ Always include:
             
         return response
 
-  
+    def categorize_query(self, query: str) -> str:
+        """Categorize the user query"""
+        categories = {
+            "dosage": ["dose", "dosage", "how to take", "when to take", "injection", "administration"],
+            "side_effects": ["side effect", "adverse", "reaction", "problem", "issues", "symptoms"],
+            "benefits": ["benefit", "advantage", "help", "work", "effect", "weight", "glucose"],
+            "storage": ["store", "storage", "keep", "refrigerate", "temperature"],
+            "lifestyle": ["diet", "exercise", "lifestyle", "food", "alcohol", "eating"],
+            "interactions": ["interaction", "drug", "medication", "combine", "mixing"],
+            "cost": ["cost", "price", "insurance", "coverage", "afford"]
+        }
         
+        query_lower = query.lower()
+        for category, keywords in categories.items():
+            if any(keyword in query_lower for keyword in keywords):
+                return category
+        return "general"
 
     def process_query(self, user_query: str) -> Dict[str, Any]:
-        """Process user query using only PPLX"""
+        """Process user query through both PPLX and GPT"""
         try:
             if not user_query.strip():
                 return {
@@ -119,7 +123,7 @@ Always include:
                     "message": "Please enter a valid question."
                 }
             
-            # Get response from PPLX
+            # Step 1: Get initial response from PPLX
             with st.spinner('🔍 Retrieving information from medical knowledge base...'):
                 pplx_response = self.get_pplx_response(user_query)
             
@@ -129,14 +133,25 @@ Always include:
                     "message": "Failed to retrieve information from knowledge base."
                 }
             
-            # Format response
+            # Step 2: Validate and enhance with GPT
+            with st.spinner('✅ Validating and enhancing information...'):
+                validated_response = self.validate_with_gpt(pplx_response, user_query)
+            
+            if not validated_response:
+                return {
+                    "status": "error",
+                    "message": "Failed to validate information."
+                }
+            
+            # Format final response
             query_category = self.categorize_query(user_query)
-            formatted_response = self.format_response(pplx_response)
+            formatted_response = self.format_response(validated_response)
             
             return {
                 "status": "success",
                 "query_category": query_category,
                 "original_query": user_query,
+                "pplx_response": pplx_response,  # Optional: for debugging
                 "response": formatted_response
             }
             
@@ -146,7 +161,6 @@ Always include:
                 "message": f"Error processing query: {str(e)}"
             }
 
-# [Rest of the code remains the same - main function, page style, etc.]
 def set_page_style():
     """Set page style using custom CSS"""
     st.markdown("""
@@ -220,16 +234,18 @@ def main():
         
         set_page_style()
         
-        # Modified API key check
-        if 'pplx' not in st.secrets:
-            st.error('Required PPLX API key not found. Please configure PPLX API key in your secrets.')
+        # Check for API keys
+        if 'openai' not in st.secrets or 'pplx' not in st.secrets:
+            st.error('Required API keys not found. Please configure both OpenAI and PPLX API keys in your secrets.')
             st.stop()
         
         st.title("💊 GLP-1 Medication Information Assistant")
         st.markdown("""
         <div class="info-box">
-        Get accurate information about GLP-1 medications, their usage, benefits, and side effects.
-        Our assistant provides specialized medical information directly from a comprehensive medical knowledge base.
+        Get accurate, validated information about GLP-1 medications, their usage, benefits, and side effects.
+        This assistant uses a two-stage process:
+        1. Retrieves specialized medical information
+        2. Validates and enhances the information for accuracy
         
         <em>Please note: This assistant provides general information only. Always consult your healthcare provider for medical advice.</em>
         </div>
