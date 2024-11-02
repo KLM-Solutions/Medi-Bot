@@ -123,7 +123,7 @@ Always include:
         for category, keywords in categories.items():
             if any(keyword in query_lower for keyword in keywords):
                 return category
-        return "general"
+        
 
     def process_query(self, user_query: str) -> Dict[str, Any]:
         """Process user query using only PPLX"""
