@@ -107,22 +107,7 @@ Always include:
             
         return response
 
-    def categorize_query(self, query: str) -> str:
-        """Categorize the user query"""
-        categories = {
-            "dosage": ["dose", "dosage", "how to take", "when to take", "injection", "administration"],
-            "side_effects": ["side effect", "adverse", "reaction", "problem", "issues", "symptoms"],
-            "benefits": ["benefit", "advantage", "help", "work", "effect", "weight", "glucose"],
-            "storage": ["store", "storage", "keep", "refrigerate", "temperature"],
-            "lifestyle": ["diet", "exercise", "lifestyle", "food", "alcohol", "eating"],
-            "interactions": ["interaction", "drug", "medication", "combine", "mixing"],
-            "cost": ["cost", "price", "insurance", "coverage", "afford"]
-        }
-        
-        query_lower = query.lower()
-        for category, keywords in categories.items():
-            if any(keyword in query_lower for keyword in keywords):
-                return category
+  
         
 
     def process_query(self, user_query: str) -> Dict[str, Any]:
