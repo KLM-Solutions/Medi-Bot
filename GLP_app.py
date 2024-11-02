@@ -113,7 +113,7 @@ Each response must include relevant medical disclaimers and encourage consultati
       if not response:
         return "I apologize, but I couldn't generate a response at this time. Please try again."
         
-    disclaimer = "\n\nDisclaimer:  Always consult your healthcare provider before making any changes to your medication or treatment plan."
+      disclaimer = "\n\nDisclaimer:  Always consult your healthcare provider before making any changes to your medication or treatment plan."
     
     return f"{response}{disclaimer}"
 
