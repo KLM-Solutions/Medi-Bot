@@ -25,7 +25,7 @@ class GLP1Bot:
         #         api_key=st.secrets["openai"]["api_key"]
         #     )
         
-        # System prompts
+        # System prompts with strict GLP-1 focus
         self.pplx_system_prompt = """
 You are a specialized medical information assistant focused EXCLUSIVELY on GLP-1 medications (such as Ozempic, Wegovy, Mounjaro, etc.). You must:
 
@@ -40,14 +40,18 @@ You are a specialized medical information assistant focused EXCLUSIVELY on GLP-1
    - An encouraging closing that reinforces their healthcare journey
 
 Remember: You must NEVER provide information about topics outside of GLP-1 medications and their direct effects.
+Each response must include relevant medical disclaimers and encourage consultation with healthcare providers.
 """
 
         # GPT validation prompt (commented for future use)
         # self.gpt_validation_prompt = """
-        # You are a medical content validator. Review and enhance the information about GLP-1 medications.
+        # You are a medical content validator specialized in GLP-1 medications.
+        # Review and enhance the information about GLP-1 medications only.
         # Maintain a professional yet approachable tone, emphasizing both expertise and emotional support.
         # """
 
+   
+        
     def get_pplx_response(self, query: str) -> Optional[str]:
         """Get comprehensive response from PPLX API"""
         try:
@@ -85,7 +89,7 @@ Remember: You must NEVER provide information about topics outside of GLP-1 medic
     #         {pplx_response}
             
     #         Please validate and enhance this response according to medical standards and best practices.
-    #         Ensure all information is accurate and properly structured.
+    #         Focus ONLY on GLP-1 medication related information.
     #         """
             
     #         completion = self.openai_client.chat.completions.create(
@@ -109,7 +113,9 @@ Remember: You must NEVER provide information about topics outside of GLP-1 medic
         if not response:
             return "I apologize, but I couldn't generate a response at this time. Please try again."
             
-        return response
+        disclaimer = "\n\nDisclaimer: This information is for educational purposes only and should not replace professional medical advice. Always consult your healthcare provider before making any changes to your medication or treatment plan."
+        
+        return f"{response}{disclaimer}"
 
     def categorize_query(self, query: str) -> str:
         """Categorize the user query"""
@@ -130,39 +136,28 @@ Remember: You must NEVER provide information about topics outside of GLP-1 medic
         return "general"
 
     def process_query(self, user_query: str) -> Dict[str, Any]:
-      """Process user query through PPLX with GLP-1 validation"""
-      try:
-        if not user_query.strip():
-            return {
-                "status": "error",
-                "message": "Please enter a valid question."
-            }
-        
-        
-        # Get comprehensive response from PPLX
-        with st.spinner('🔍 Retrieving and validating information...'):
-            pplx_response = self.get_pplx_response(user_query)
-        
-        if not pplx_response:
-            return {
-                "status": "error",
-                "message": "Failed to retrieve information."
-            }
-        
+        """Process user query through PPLX with GLP-1 validation"""
+        try:
+            if not user_query.strip():
+                return {
+                    "status": "error",
+                    "message": "Please enter a valid question."
+                }
             
-            # GPT validation step (commented for future use)
-            # with st.spinner('✅ Validating and enhancing information...'):
-            #     validated_response = self.validate_with_gpt(pplx_response, user_query)
-            # 
-            # if not validated_response:
-            #     return {
-            #         "status": "error",
-            #         "message": "Failed to validate information."
-            #     }
+            
+            # Get comprehensive response from PPLX
+            with st.spinner('🔍 Retrieving and validating information about GLP-1 medications...'):
+                pplx_response = self.get_pplx_response(user_query)
+            
+            if not pplx_response:
+                return {
+                    "status": "error",
+                    "message": "Failed to retrieve information about GLP-1 medications."
+                }
             
             # Format final response
             query_category = self.categorize_query(user_query)
-            formatted_response = self.format_response(pplx_response)  # Change to validated_response when using GPT
+            formatted_response = self.format_response(pplx_response)
             
             return {
                 "status": "success",
@@ -171,7 +166,7 @@ Remember: You must NEVER provide information about topics outside of GLP-1 medic
                 "response": formatted_response
             }
             
-          except Exception as e:
+        except Exception as e:
             return {
                 "status": "error",
                 "message": f"Error processing query: {str(e)}"
@@ -258,10 +253,10 @@ def main():
         st.title("💊 GLP-1 Medication Information Assistant")
         st.markdown("""
         <div class="info-box">
-        Get accurate, validated information about GLP-1 medications, their usage, benefits, and side effects.
-        Our assistant uses specialized medical knowledge to provide comprehensive, reliable information.
+        Get accurate, validated information specifically about GLP-1 medications, their usage, benefits, and side effects.
+        Our assistant specializes exclusively in GLP-1 medications and related topics.
         
-        <em>Please note: This assistant provides general information only. Always consult your healthcare provider for medical advice.</em>
+        <em>Please note: This assistant provides general information about GLP-1 medications only. Always consult your healthcare provider for medical advice.</em>
         </div>
         """, unsafe_allow_html=True)
         
@@ -277,7 +272,7 @@ def main():
             user_input = st.text_input(
                 "Ask your question about GLP-1 medications:",
                 key="user_input",
-                placeholder="e.g., What are the common side effects of GLP-1 medications?"
+                placeholder="e.g., What are the common side effects of Ozempic?"
             )
             
             col1, col2 = st.columns([1, 5])
@@ -311,7 +306,7 @@ def main():
                     else:
                         st.error(response["message"])
                 else:
-                    st.warning("Please enter a question.")
+                    st.warning("Please enter a question about GLP-1 medications.")
         
         # Display chat history
         if st.session_state.chat_history:
