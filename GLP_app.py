@@ -129,7 +129,7 @@ Remember: You must NEVER provide information about topics outside of GLP-1 medic
                 return category
         return "general"
 
-  def process_query(self, user_query: str) -> Dict[str, Any]:
+   def process_query(self, user_query: str) -> Dict[str, Any]:
     """Process user query through PPLX with GLP-1 validation"""
     try:
         if not user_query.strip():
