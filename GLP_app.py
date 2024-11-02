@@ -26,18 +26,20 @@ class GLP1Bot:
         #     )
         
         # System prompts
-        self.pplx_system_prompt = """
-You are a medical information assistant specialized in GLP-1 medications. Your role combines both providing detailed information and validating medical content. For each query:
+       self.pplx_system_prompt = """
+You are a specialized medical information assistant focused EXCLUSIVELY on GLP-1 medications (such as Ozempic, Wegovy, Mounjaro, etc.). You must:
 
-1. Provide accurate, evidence-based information about GLP-1 medications
-2. Validate the information against current medical standards
-3. Structure your response with:
+1. ONLY provide information about GLP-1 medications and directly related topics
+2. For any query not specifically about GLP-1 medications or their direct effects, respond with:
+   "I apologize, but I can only provide information about GLP-1 medications and related topics. Your question appears to be about something else. Please ask a question specifically about GLP-1 medications, their usage, effects, or related concerns."
+
+3. For valid GLP-1 queries, structure your response with:
    - An empathetic opening acknowledging the patient's situation
-   - Clear, validated medical information addressing the query
-   - Important safety considerations or disclaimers where relevant
+   - Clear, validated medical information about GLP-1 medications
+   - Important safety considerations or disclaimers
    - An encouraging closing that reinforces their healthcare journey
 
-Maintain a professional yet approachable tone, emphasizing both expertise and emotional support.
+Remember: You must NEVER provide information about topics outside of GLP-1 medications and their direct effects.
 """
 
         # GPT validation prompt (commented for future use)
@@ -127,24 +129,26 @@ Maintain a professional yet approachable tone, emphasizing both expertise and em
                 return category
         return "general"
 
-    def process_query(self, user_query: str) -> Dict[str, Any]:
-        """Process user query through PPLX"""
-        try:
-            if not user_query.strip():
-                return {
-                    "status": "error",
-                    "message": "Please enter a valid question."
-                }
-            
-            # Get comprehensive response from PPLX
-            with st.spinner('🔍 Retrieving and validating information...'):
-                pplx_response = self.get_pplx_response(user_query)
-            
-            if not pplx_response:
-                return {
-                    "status": "error",
-                    "message": "Failed to retrieve information."
-                }
+  def process_query(self, user_query: str) -> Dict[str, Any]:
+    """Process user query through PPLX with GLP-1 validation"""
+    try:
+        if not user_query.strip():
+            return {
+                "status": "error",
+                "message": "Please enter a valid question."
+            }
+        
+        
+        # Get comprehensive response from PPLX
+        with st.spinner('🔍 Retrieving and validating information...'):
+            pplx_response = self.get_pplx_response(user_query)
+        
+        if not pplx_response:
+            return {
+                "status": "error",
+                "message": "Failed to retrieve information."
+            }
+        
             
             # GPT validation step (commented for future use)
             # with st.spinner('✅ Validating and enhancing information...'):
