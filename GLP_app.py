@@ -115,7 +115,7 @@ Each response must include relevant medical disclaimers and encourage consultati
         
       disclaimer = "\n\nDisclaimer:  Always consult your healthcare provider before making any changes to your medication or treatment plan."
     
-    return f"{response}{disclaimer}"
+        return f"{response}{disclaimer}"
 
     def categorize_query(self, query: str) -> str:
         """Categorize the user query"""
