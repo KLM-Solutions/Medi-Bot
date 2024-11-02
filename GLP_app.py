@@ -171,7 +171,7 @@ Remember: You must NEVER provide information about topics outside of GLP-1 medic
                 "response": formatted_response
             }
             
-        except Exception as e:
+          except Exception as e:
             return {
                 "status": "error",
                 "message": f"Error processing query: {str(e)}"
