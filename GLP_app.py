@@ -51,7 +51,6 @@ Each response must include relevant medical disclaimers and encourage consultati
         # """
 
    
-        
     def get_pplx_response(self, query: str) -> Optional[str]:
         """Get comprehensive response from PPLX API"""
         try:
@@ -109,12 +108,12 @@ Each response must include relevant medical disclaimers and encourage consultati
     #         return None
 
     def format_response(self, response: str) -> str:
-      """Format the response with safety disclaimer"""
-      if not response:
-        return "I apologize, but I couldn't generate a response at this time. Please try again."
+        """Format the response with safety disclaimer"""
+        if not response:
+            return "I apologize, but I couldn't generate a response at this time. Please try again."
+            
+        disclaimer = "\n\nDisclaimer: Always consult your healthcare provider before making any changes to your medication or treatment plan."
         
-      disclaimer = "\n\nDisclaimer:  Always consult your healthcare provider before making any changes to your medication or treatment plan."
-    
         return f"{response}{disclaimer}"
 
     def categorize_query(self, query: str) -> str:
@@ -143,8 +142,7 @@ Each response must include relevant medical disclaimers and encourage consultati
                     "status": "error",
                     "message": "Please enter a valid question."
                 }
-            
-            
+          
             # Get comprehensive response from PPLX
             with st.spinner('🔍 Retrieving and validating information about GLP-1 medications...'):
                 pplx_response = self.get_pplx_response(user_query)
