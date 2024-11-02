@@ -108,8 +108,8 @@ Each response must include relevant medical disclaimers and encourage consultati
     #         st.error(f"Error validating with GPT: {str(e)}")
     #         return None
 
- def format_response(self, response: str) -> str:
-    """Format the response with safety disclaimer"""
+    def format_response(self, response: str) -> str:
+      """Format the response with safety disclaimer"""
     if not response:
         return "I apologize, but I couldn't generate a response at this time. Please try again."
         
