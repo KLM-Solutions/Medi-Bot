@@ -33,6 +33,7 @@ You are a specialized medical information assistant focused EXCLUSIVELY on GLP-1
 Remember: You must NEVER provide information about topics outside of GLP-1 medications and their direct effects.
 Each response must include relevant medical disclaimers and encourage consultation with healthcare providers.
 Always cite your sources for medical claims and information.
+Please format sources as separate URLs, one per line.
 """
 
     def get_pplx_response(self, query: str) -> Optional[Dict[str, Any]]:
@@ -60,11 +61,38 @@ Always cite your sources for medical claims and information.
             # Split response into main content and sources
             content_parts = response_content.split("\nSources:", 1)
             main_content = content_parts[0].strip()
-            sources = content_parts[1].strip() if len(content_parts) > 1 else "No specific sources provided."
+            
+            # Process sources if they exist
+            if len(content_parts) > 1:
+                # Split sources by common URL indicators and clean up
+                raw_sources = content_parts[1].strip()
+                sources = []
+                
+                # Split by common URL patterns
+                url_patterns = ['http://', 'https://', 'www.']
+                current_source = ""
+                
+                for line in raw_sources.split():
+                    if any(pattern in line for pattern in url_patterns):
+                        if current_source:  # Save previous source if exists
+                            sources.append(current_source.strip())
+                        current_source = line
+                    else:
+                        current_source += " " + line
+                
+                # Add the last source
+                if current_source:
+                    sources.append(current_source.strip())
+                
+                # Clean up sources
+                sources = [source.strip() for source in sources if source.strip()]
+                formatted_sources = "\n".join(f"• {source}" for source in sources)
+            else:
+                formatted_sources = "No specific sources provided."
             
             return {
                 "content": main_content,
-                "sources": sources
+                "sources": formatted_sources
             }
             
         except Exception as e:
@@ -78,8 +106,26 @@ Always cite your sources for medical claims and information.
             
         disclaimer = "\n\nDisclaimer: Always consult your healthcare provider before making any changes to your medication or treatment plan."
         
-        formatted_response = f"{response['content']}{disclaimer}\n\nSources:\n{response['sources']}"
+        formatted_response = f"{response['content']}{disclaimer}"
         return formatted_response
+
+    def categorize_query(self, query: str) -> str:
+        """Categorize the user query"""
+        categories = {
+            "dosage": ["dose", "dosage", "how to take", "when to take", "injection", "administration"],
+            "side_effects": ["side effect", "adverse", "reaction", "problem", "issues", "symptoms"],
+            "benefits": ["benefit", "advantage", "help", "work", "effect", "weight", "glucose"],
+            "storage": ["store", "storage", "keep", "refrigerate", "temperature"],
+            "lifestyle": ["diet", "exercise", "lifestyle", "food", "alcohol", "eating"],
+            "interactions": ["interaction", "drug", "medication", "combine", "mixing"],
+            "cost": ["cost", "price", "insurance", "coverage", "afford"]
+        }
+        
+        query_lower = query.lower()
+        for category, keywords in categories.items():
+            if any(keyword in query_lower for keyword in keywords):
+                return category
+        return "general"
 
     def process_query(self, user_query: str) -> Dict[str, Any]:
         """Process user query through PPLX with GLP-1 validation and sources"""
@@ -118,24 +164,6 @@ Always cite your sources for medical claims and information.
                 "message": f"Error processing query: {str(e)}"
             }
 
-    def categorize_query(self, query: str) -> str:
-        """Categorize the user query"""
-        categories = {
-            "dosage": ["dose", "dosage", "how to take", "when to take", "injection", "administration"],
-            "side_effects": ["side effect", "adverse", "reaction", "problem", "issues", "symptoms"],
-            "benefits": ["benefit", "advantage", "help", "work", "effect", "weight", "glucose"],
-            "storage": ["store", "storage", "keep", "refrigerate", "temperature"],
-            "lifestyle": ["diet", "exercise", "lifestyle", "food", "alcohol", "eating"],
-            "interactions": ["interaction", "drug", "medication", "combine", "mixing"],
-            "cost": ["cost", "price", "insurance", "coverage", "afford"]
-        }
-        
-        query_lower = query.lower()
-        for category, keywords in categories.items():
-            if any(keyword in query_lower for keyword in keywords):
-                return category
-        return "general"
-
 def set_page_style():
     """Set page style using custom CSS"""
     st.markdown("""
@@ -170,11 +198,31 @@ def set_page_style():
             display: inline-block;
         }
         .sources-section {
-            background-color: #fff3e0;
-            padding: 1rem;
+            background-color: #f8f9fa;
+            padding: 1.2rem;
             border-radius: 0.5rem;
             margin-top: 1rem;
-            border-left: 4px solid #ff9800;
+            border-left: 4px solid #0d6efd;
+        }
+        .sources-section ul {
+            list-style-type: none;
+            padding-left: 0;
+            margin-top: 0.5rem;
+        }
+        .sources-section li {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .sources-section li:last-child {
+            border-bottom: none;
+        }
+        .source-link {
+            color: #0d6efd;
+            text-decoration: none;
+            word-break: break-word;
+        }
+        .source-link:hover {
+            text-decoration: underline;
         }
         .disclaimer {
             background-color: #fff3e0;
@@ -249,12 +297,20 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                     
+                    # Format sources as clickable links
+                    sources_html = "<br>".join(
+                        f'<a href="{source.strip().replace("• ", "")}" class="source-link" target="_blank">{source.strip()}</a>'
+                        if source.strip().replace("• ", "").startswith(('http://', 'https://')) 
+                        else source
+                        for source in response["sources"].split('\n')
+                    )
+                    
                     st.markdown(f"""
                     <div class="chat-message bot-message">
                         <div class="category-tag">{response["query_category"].upper()}</div><br>
                         <b>Response:</b><br>{response["response"]}
                         <div class="sources-section">
-                            <b>Sources:</b><br>{response["sources"]}
+                            <b>Sources:</b><br>{sources_html}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -266,6 +322,13 @@ def main():
             st.markdown("### Previous Questions")
             for i, chat in enumerate(reversed(st.session_state.chat_history[:-1]), 1):
                 with st.expander(f"Question {len(st.session_state.chat_history) - i}: {chat['query'][:50]}..."):
+                    sources_html = "<br>".join(
+                        f'<a href="{source.strip().replace("• ", "")}" class="source-link" target="_blank">{source.strip()}</a>'
+                        if source.strip().replace("• ", "").startswith(('http://', 'https://')) 
+                        else source
+                        for source in chat['response']["sources"].split('\n')
+                    )
+                    
                     st.markdown(f"""
                     <div class="chat-message user-message">
                         <b>Your Question:</b><br>{chat['query']}
@@ -274,7 +337,7 @@ def main():
                         <div class="category-tag">{chat['response']['query_category'].upper()}</div><br>
                         <b>Response:</b><br>{chat['response']['response']}
                         <div class="sources-section">
-                            <b>Sources:</b><br>{chat['response']['sources']}
+                            <b>Sources:</b><br>{sources_html}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
