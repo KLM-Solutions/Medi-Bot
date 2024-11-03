@@ -1,7 +1,9 @@
 import streamlit as st
 import requests
 import json
+import re
 from typing import Dict, Any, Optional, Generator
+from urllib.parse import quote
 
 class GLP1Bot:
     def __init__(self):
@@ -29,12 +31,25 @@ You are a specialized medical information assistant focused EXCLUSIVELY on GLP-1
    - Clear, validated medical information about GLP-1 medications
    - Important safety considerations or disclaimers
    - An encouraging closing that reinforces their healthcare journey
-   - Include relevant sources for the information provided, using the format: [Source: Title or description (Year if available)]
+   - Include relevant sources in the format: [Title or description (Year if available) | URL]
 
 Remember: You must NEVER provide information about topics outside of GLP-1 medications and their direct effects.
 Each response must include relevant medical disclaimers and encourage consultation with healthcare providers.
-Always cite your sources for medical claims and information.
+Always provide URLs for sources when available.
 """
+
+    def parse_sources(self, sources_text: str) -> list:
+        """Parse sources text and extract title and URL"""
+        sources = []
+        source_pattern = r'\[(.*?)(?:\s*\|\s*(https?://[^\]\s]+))?\]'
+        matches = re.finditer(source_pattern, sources_text)
+        
+        for match in matches:
+            title = match.group(1).strip()
+            url = match.group(2).strip() if match.group(2) else f"https://scholar.google.com/scholar?q={quote(title)}"
+            sources.append({"title": title, "url": url})
+        
+        return sources
 
     def stream_pplx_response(self, query: str) -> Generator[Dict[str, Any], None, None]:
         """Stream response from PPLX API with sources"""
@@ -43,11 +58,11 @@ Always cite your sources for medical claims and information.
                 "model": self.pplx_model,
                 "messages": [
                     {"role": "system", "content": self.pplx_system_prompt},
-                    {"role": "user", "content": f"{query}\n\nPlease include sources for the information provided."}
+                    {"role": "user", "content": f"{query}\n\nPlease include sources with URLs where available."}
                 ],
                 "temperature": 0.1,
                 "max_tokens": 1500,
-                "stream": True  # Enable streaming
+                "stream": True
             }
             
             response = requests.post(
@@ -65,7 +80,7 @@ Always cite your sources for medical claims and information.
                     line = line.decode('utf-8')
                     if line.startswith('data: '):
                         try:
-                            json_str = line[6:]  # Remove 'data: ' prefix
+                            json_str = line[6:]
                             if json_str.strip() == '[DONE]':
                                 break
                             
@@ -76,10 +91,12 @@ Always cite your sources for medical claims and information.
                             content = chunk['choices'][0]['delta'].get('content', '')
                             if content:
                                 accumulated_content += content
+                                # Clean the content for display
+                                display_content = accumulated_content.split("\nSources:", 1)[0].strip()
                                 yield {
                                     "type": "content",
                                     "data": content,
-                                    "accumulated": accumulated_content
+                                    "display": display_content
                                 }
                         except json.JSONDecodeError:
                             continue
@@ -87,7 +104,8 @@ Always cite your sources for medical claims and information.
             # Split final content into main content and sources
             content_parts = accumulated_content.split("\nSources:", 1)
             main_content = content_parts[0].strip()
-            sources = content_parts[1].strip() if len(content_parts) > 1 else "No specific sources provided."
+            sources_text = content_parts[1].strip() if len(content_parts) > 1 else "No specific sources provided."
+            sources = self.parse_sources(sources_text)
             
             yield {
                 "type": "complete",
@@ -112,7 +130,7 @@ Always cite your sources for medical claims and information.
             
             query_category = self.categorize_query(user_query)
             full_response = ""
-            sources = ""
+            sources = []
             
             # Initialize the placeholder content
             message_placeholder = placeholder.empty()
@@ -124,12 +142,11 @@ Always cite your sources for medical claims and information.
                     return {"status": "error", "message": chunk["message"]}
                 
                 elif chunk["type"] == "content":
-                    full_response = chunk["accumulated"]
-                    # Update the placeholder with the accumulated text
+                    # Update the placeholder with clean display content
                     message_placeholder.markdown(f"""
                     <div class="chat-message bot-message">
-                        <div class="category-tag">{query_category.upper()}</div><br>
-                        <b>Response:</b><br>{full_response}
+                        <div class="category-tag">{query_category.upper()}</div>
+                        <div class="response-content">{chunk["display"]}</div>
                     </div>
                     """, unsafe_allow_html=True)
                 
@@ -137,14 +154,20 @@ Always cite your sources for medical claims and information.
                     full_response = chunk["content"]
                     sources = chunk["sources"]
                     
+                    # Create clickable source links
+                    sources_html = "<br>".join([
+                        f'<a href="{source["url"]}" target="_blank">{source["title"]}</a>'
+                        for source in sources
+                    ])
+                    
                     # Update final response with sources and disclaimer
                     disclaimer = "\n\nDisclaimer: Always consult your healthcare provider before making any changes to your medication or treatment plan."
                     message_placeholder.markdown(f"""
                     <div class="chat-message bot-message">
-                        <div class="category-tag">{query_category.upper()}</div><br>
-                        <b>Response:</b><br>{full_response}{disclaimer}
+                        <div class="category-tag">{query_category.upper()}</div>
+                        <div class="response-content">{full_response}{disclaimer}</div>
                         <div class="sources-section">
-                            <b>Sources:</b><br>{sources}
+                            <b>Sources:</b><br>{sources_html}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -165,7 +188,6 @@ Always cite your sources for medical claims and information.
 
     def categorize_query(self, query: str) -> str:
         """Categorize the user query"""
-        # [Previous categorize_query implementation remains the same]
         categories = {
             "dosage": ["dose", "dosage", "how to take", "when to take", "injection", "administration"],
             "side_effects": ["side effect", "adverse", "reaction", "problem", "issues", "symptoms"],
@@ -181,6 +203,7 @@ Always cite your sources for medical claims and information.
             if any(keyword in query_lower for keyword in keywords):
                 return category
         return "general"
+
 def set_page_style():
     """Set page style using custom CSS"""
     st.markdown("""
@@ -214,12 +237,25 @@ def set_page_style():
             margin-bottom: 0.5rem;
             display: inline-block;
         }
+        .response-content {
+            margin: 1rem 0;
+            line-height: 1.6;
+        }
         .sources-section {
             background-color: #fff3e0;
             padding: 1rem;
             border-radius: 0.5rem;
             margin-top: 1rem;
             border-left: 4px solid #ff9800;
+        }
+        .sources-section a {
+            color: #1565c0;
+            text-decoration: none;
+            display: inline-block;
+            margin: 0.2rem 0;
+        }
+        .sources-section a:hover {
+            text-decoration: underline;
         }
         .disclaimer {
             background-color: #fff3e0;
@@ -247,7 +283,7 @@ def main():
             layout="wide"
         )
         
-        set_page_style()  # Your existing style function remains the same
+        set_page_style()
         
         if 'pplx' not in st.secrets:
             st.error('Required PPLX API key not found. Please configure the PPLX API key in your secrets.')
@@ -286,10 +322,7 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Create a placeholder for the streaming response
                 response_placeholder = st.empty()
-                
-                # Process the query with streaming
                 response = bot.process_streaming_query(user_input, response_placeholder)
                 
                 if response["status"] == "success":
@@ -303,15 +336,20 @@ def main():
             st.markdown("### Previous Questions")
             for i, chat in enumerate(reversed(st.session_state.chat_history[:-1]), 1):
                 with st.expander(f"Question {len(st.session_state.chat_history) - i}: {chat['query'][:50]}..."):
+                    sources_html = "<br>".join([
+                        f'<a href="{source["url"]}" target="_blank">{source["title"]}</a>'
+                        for source in chat['response'].get('sources', [])
+                    ])
+                    
                     st.markdown(f"""
                     <div class="chat-message user-message">
                         <b>Your Question:</b><br>{chat['query']}
                     </div>
                     <div class="chat-message bot-message">
-                        <div class="category-tag">{chat['response']['query_category'].upper()}</div><br>
-                        <b>Response:</b><br>{chat['response']['response']}
+                        <div class="category-tag">{chat['response']['query_category'].upper()}</div>
+                        <div class="response-content">{chat['response']['response']}</div>
                         <div class="sources-section">
-                            <b>Sources:</b><br>{chat['response']['sources']}
+                            <b>Sources:</b><br>{sources_html}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
