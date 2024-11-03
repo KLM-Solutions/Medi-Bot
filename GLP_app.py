@@ -47,7 +47,7 @@ Always cite your sources for medical claims and information.
                 ],
                 "temperature": 0.1,
                 "max_tokens": 1500,
-                "stream": True  # Enable streaming
+                "stream": True
             }
             
             response = requests.post(
@@ -85,7 +85,6 @@ Always cite your sources for medical claims and information.
                     "message": "Please enter a valid question."
                 }
             
-            # Initialize response container
             response_container = {
                 "status": "success",
                 "query_category": self.categorize_query(user_query),
@@ -164,8 +163,6 @@ def main():
             layout="wide"
         )
         
-        set_page_style()  # Keep your existing style function
-        
         if 'pplx' not in st.secrets:
             st.error('Required PPLX API key not found. Please configure the PPLX API key in your secrets.')
             st.stop()
@@ -238,6 +235,115 @@ def main():
     except Exception as e:
         st.error(f"An unexpected error occurred: {str(e)}")
         st.error("Please refresh the page and try again.")
+
+# Frontend Styles
+st.markdown("""
+<style>
+    .main {
+        background-color: #f5f5f5;
+    }
+    .stTextInput>div>div>input {
+        background-color: white;
+    }
+    .chat-message {
+        padding: 1.5rem;
+        border-radius: 0.8rem;
+        margin: 1rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .user-message {
+        background-color: #e3f2fd;
+        border-left: 4px solid #1976d2;
+    }
+    .bot-message {
+        background-color: #f5f5f5;
+        border-left: 4px solid #43a047;
+    }
+    .category-tag {
+        background-color: #2196f3;
+        color: white;
+        padding: 0.2rem 0.6rem;
+        border-radius: 1rem;
+        font-size: 0.8rem;
+        margin-bottom: 0.5rem;
+        display: inline-block;
+    }
+    .sources-section {
+        background-color: #fff3e0;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-top: 1rem;
+        border-left: 4px solid #ff9800;
+    }
+    .disclaimer {
+        background-color: #fff3e0;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #ff9800;
+        margin: 1rem 0;
+        font-size: 0.9rem;
+    }
+    .info-box {
+        background-color: #e8f5e9;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 1rem 0;
+    }
+    
+    /* Additional styles for streaming response */
+    .stream-response {
+        animation: fadeIn 0.3s ease-in;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    
+    /* Improved loading state */
+    .loading {
+        display: inline-block;
+        position: relative;
+        width: 80px;
+        height: 13px;
+    }
+    .loading div {
+        position: absolute;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: #2196f3;
+        animation-timing-function: cubic-bezier(0, 1, 1, 0);
+    }
+    .loading div:nth-child(1) {
+        left: 8px;
+        animation: loading1 0.6s infinite;
+    }
+    .loading div:nth-child(2) {
+        left: 8px;
+        animation: loading2 0.6s infinite;
+    }
+    .loading div:nth-child(3) {
+        left: 32px;
+        animation: loading2 0.6s infinite;
+    }
+    .loading div:nth-child(4) {
+        left: 56px;
+        animation: loading3 0.6s infinite;
+    }
+    @keyframes loading1 {
+        0% { transform: scale(0); }
+        100% { transform: scale(1); }
+    }
+    @keyframes loading2 {
+        0% { transform: translate(0, 0); }
+        100% { transform: translate(24px, 0); }
+    }
+    @keyframes loading3 {
+        0% { transform: scale(1); }
+        100% { transform: scale(0); }
+    }
+</style>
+""", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
