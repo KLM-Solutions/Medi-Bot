@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import json
-from typing import Dict, Any, Optional, Iterator
+from typing import Dict, Any, Optional, Generator
 
 class GLP1Bot:
     def __init__(self):
@@ -36,8 +36,8 @@ Each response must include relevant medical disclaimers and encourage consultati
 Always cite your sources for medical claims and information.
 """
 
-    def get_pplx_stream(self, query: str) -> Iterator[Dict[str, Any]]:
-        """Get streaming response from PPLX API"""
+    def stream_pplx_response(self, query: str) -> Generator[Dict[str, Any], None, None]:
+        """Stream response from PPLX API with sources"""
         try:
             payload = {
                 "model": self.pplx_model,
@@ -47,7 +47,7 @@ Always cite your sources for medical claims and information.
                 ],
                 "temperature": 0.1,
                 "max_tokens": 1500,
-                "stream": True
+                "stream": True  # Enable streaming
             }
             
             response = requests.post(
@@ -58,23 +58,48 @@ Always cite your sources for medical claims and information.
             )
             
             response.raise_for_status()
+            accumulated_content = ""
             
             for line in response.iter_lines():
                 if line:
-                    if line.strip() == b"data: [DONE]":
-                        break
-                    if line.startswith(b"data: "):
-                        json_str = line[6:].decode('utf-8')
+                    line = line.decode('utf-8')
+                    if line.startswith('data: '):
                         try:
-                            json_data = json.loads(json_str)
-                            content = json_data["choices"][0]["delta"].get("content", "")
+                            json_str = line[6:]  # Remove 'data: ' prefix
+                            if json_str.strip() == '[DONE]':
+                                break
+                            
+                            chunk = json.loads(json_str)
+                            if chunk['choices'][0]['finish_reason'] is not None:
+                                break
+                                
+                            content = chunk['choices'][0]['delta'].get('content', '')
                             if content:
-                                yield content
+                                accumulated_content += content
+                                yield {
+                                    "type": "content",
+                                    "data": content,
+                                    "accumulated": accumulated_content
+                                }
                         except json.JSONDecodeError:
                             continue
-                            
+            
+            # Split final content into main content and sources
+            content_parts = accumulated_content.split("\nSources:", 1)
+            main_content = content_parts[0].strip()
+            sources = content_parts[1].strip() if len(content_parts) > 1 else "No specific sources provided."
+            
+            yield {
+                "type": "complete",
+                "content": main_content,
+                "sources": sources
+            }
+            
         except Exception as e:
-            yield f"Error: {str(e)}"
+            yield {
+                "type": "error",
+                "message": f"Error communicating with PPLX: {str(e)}"
+            }
 
     def process_streaming_query(self, user_query: str, placeholder) -> Dict[str, Any]:
         """Process user query with streaming response"""
@@ -85,50 +110,52 @@ Always cite your sources for medical claims and information.
                     "message": "Please enter a valid question."
                 }
             
-            response_container = {
-                "status": "success",
-                "query_category": self.categorize_query(user_query),
-                "original_query": user_query,
-                "response": "",
-                "sources": ""
-            }
+            query_category = self.categorize_query(user_query)
+            full_response = ""
+            sources = ""
             
-            full_response = []
-            sources_started = False
-            sources = []
+            # Initialize the placeholder content
+            message_placeholder = placeholder.empty()
             
             # Stream the response
-            for chunk in self.get_pplx_stream(user_query):
-                if "Sources:" in chunk:
-                    sources_started = True
-                    continue
+            for chunk in self.stream_pplx_response(user_query):
+                if chunk["type"] == "error":
+                    placeholder.error(chunk["message"])
+                    return {"status": "error", "message": chunk["message"]}
                 
-                if sources_started:
-                    sources.append(chunk)
-                else:
-                    full_response.append(chunk)
+                elif chunk["type"] == "content":
+                    full_response = chunk["accumulated"]
+                    # Update the placeholder with the accumulated text
+                    message_placeholder.markdown(f"""
+                    <div class="chat-message bot-message">
+                        <div class="category-tag">{query_category.upper()}</div><br>
+                        <b>Response:</b><br>{full_response}
+                    </div>
+                    """, unsafe_allow_html=True)
                 
-                # Update the placeholder with current content
-                current_content = "".join(full_response)
-                if sources_started:
-                    current_content += "\n\nSources:\n" + "".join(sources)
-                
-                # Add disclaimer
-                formatted_content = current_content + "\n\nDisclaimer: Always consult your healthcare provider before making any changes to your medication or treatment plan."
-                
-                # Update the placeholder
-                placeholder.markdown(f"""
-                <div class="chat-message bot-message">
-                    <div class="category-tag">{response_container["query_category"].upper()}</div><br>
-                    <b>Response:</b><br>{formatted_content}
-                </div>
-                """, unsafe_allow_html=True)
+                elif chunk["type"] == "complete":
+                    full_response = chunk["content"]
+                    sources = chunk["sources"]
+                    
+                    # Update final response with sources and disclaimer
+                    disclaimer = "\n\nDisclaimer: Always consult your healthcare provider before making any changes to your medication or treatment plan."
+                    message_placeholder.markdown(f"""
+                    <div class="chat-message bot-message">
+                        <div class="category-tag">{query_category.upper()}</div><br>
+                        <b>Response:</b><br>{full_response}{disclaimer}
+                        <div class="sources-section">
+                            <b>Sources:</b><br>{sources}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
             
-            # Store final response
-            response_container["response"] = "".join(full_response)
-            response_container["sources"] = "".join(sources)
-            
-            return response_container
+            return {
+                "status": "success",
+                "query_category": query_category,
+                "original_query": user_query,
+                "response": f"{full_response}{disclaimer}",
+                "sources": sources
+            }
             
         except Exception as e:
             return {
@@ -138,6 +165,7 @@ Always cite your sources for medical claims and information.
 
     def categorize_query(self, query: str) -> str:
         """Categorize the user query"""
+        # [Previous categorize_query implementation remains the same]
         categories = {
             "dosage": ["dose", "dosage", "how to take", "when to take", "injection", "administration"],
             "side_effects": ["side effect", "adverse", "reaction", "problem", "issues", "symptoms"],
@@ -154,6 +182,65 @@ Always cite your sources for medical claims and information.
                 return category
         return "general"
 
+
+        
+def set_page_style():
+    """Set page style using custom CSS"""
+    st.markdown("""
+    <style>
+        .main {
+            background-color: #f5f5f5;
+        }
+        .stTextInput>div>div>input {
+            background-color: white;
+        }
+        .chat-message {
+            padding: 1.5rem;
+            border-radius: 0.8rem;
+            margin: 1rem 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            border-left: 4px solid #1976d2;
+        }
+        .bot-message {
+            background-color: #f5f5f5;
+            border-left: 4px solid #43a047;
+        }
+        .category-tag {
+            background-color: #2196f3;
+            color: white;
+            padding: 0.2rem 0.6rem;
+            border-radius: 1rem;
+            font-size: 0.8rem;
+            margin-bottom: 0.5rem;
+            display: inline-block;
+        }
+        .sources-section {
+            background-color: #fff3e0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+            border-left: 4px solid #ff9800;
+        }
+        .disclaimer {
+            background-color: #fff3e0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border-left: 4px solid #ff9800;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }
+        .info-box {
+            background-color: #e8f5e9;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
 def main():
     """Main application function"""
     try:
@@ -162,6 +249,8 @@ def main():
             page_icon="💊",
             layout="wide"
         )
+        
+        set_page_style()  # Your existing style function remains the same
         
         if 'pplx' not in st.secrets:
             st.error('Required PPLX API key not found. Please configure the PPLX API key in your secrets.')
@@ -211,8 +300,6 @@ def main():
                         "query": user_input,
                         "response": response
                     })
-                else:
-                    st.error(response["message"])
         
         if st.session_state.chat_history:
             st.markdown("---")
@@ -235,115 +322,6 @@ def main():
     except Exception as e:
         st.error(f"An unexpected error occurred: {str(e)}")
         st.error("Please refresh the page and try again.")
-
-# Frontend Styles
-st.markdown("""
-<style>
-    .main {
-        background-color: #f5f5f5;
-    }
-    .stTextInput>div>div>input {
-        background-color: white;
-    }
-    .chat-message {
-        padding: 1.5rem;
-        border-radius: 0.8rem;
-        margin: 1rem 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .user-message {
-        background-color: #e3f2fd;
-        border-left: 4px solid #1976d2;
-    }
-    .bot-message {
-        background-color: #f5f5f5;
-        border-left: 4px solid #43a047;
-    }
-    .category-tag {
-        background-color: #2196f3;
-        color: white;
-        padding: 0.2rem 0.6rem;
-        border-radius: 1rem;
-        font-size: 0.8rem;
-        margin-bottom: 0.5rem;
-        display: inline-block;
-    }
-    .sources-section {
-        background-color: #fff3e0;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin-top: 1rem;
-        border-left: 4px solid #ff9800;
-    }
-    .disclaimer {
-        background-color: #fff3e0;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #ff9800;
-        margin: 1rem 0;
-        font-size: 0.9rem;
-    }
-    .info-box {
-        background-color: #e8f5e9;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 1rem 0;
-    }
-    
-    /* Additional styles for streaming response */
-    .stream-response {
-        animation: fadeIn 0.3s ease-in;
-    }
-    @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-    
-    /* Improved loading state */
-    .loading {
-        display: inline-block;
-        position: relative;
-        width: 80px;
-        height: 13px;
-    }
-    .loading div {
-        position: absolute;
-        width: 13px;
-        height: 13px;
-        border-radius: 50%;
-        background: #2196f3;
-        animation-timing-function: cubic-bezier(0, 1, 1, 0);
-    }
-    .loading div:nth-child(1) {
-        left: 8px;
-        animation: loading1 0.6s infinite;
-    }
-    .loading div:nth-child(2) {
-        left: 8px;
-        animation: loading2 0.6s infinite;
-    }
-    .loading div:nth-child(3) {
-        left: 32px;
-        animation: loading2 0.6s infinite;
-    }
-    .loading div:nth-child(4) {
-        left: 56px;
-        animation: loading3 0.6s infinite;
-    }
-    @keyframes loading1 {
-        0% { transform: scale(0); }
-        100% { transform: scale(1); }
-    }
-    @keyframes loading2 {
-        0% { transform: translate(0, 0); }
-        100% { transform: translate(24px, 0); }
-    }
-    @keyframes loading3 {
-        0% { transform: scale(1); }
-        100% { transform: scale(0); }
-    }
-</style>
-""", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
