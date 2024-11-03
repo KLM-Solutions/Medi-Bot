@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
-from typing import Dict, Any, Optional
+import json
+from typing import Dict, Any, Optional, Iterator
 
 class GLP1Bot:
     def __init__(self):
@@ -35,8 +36,8 @@ Each response must include relevant medical disclaimers and encourage consultati
 Always cite your sources for medical claims and information.
 """
 
-    def get_pplx_response(self, query: str) -> Optional[Dict[str, Any]]:
-        """Get comprehensive response with sources from PPLX API"""
+    def get_pplx_stream(self, query: str) -> Iterator[Dict[str, Any]]:
+        """Get streaming response from PPLX API"""
         try:
             payload = {
                 "model": self.pplx_model,
@@ -45,72 +46,90 @@ Always cite your sources for medical claims and information.
                     {"role": "user", "content": f"{query}\n\nPlease include sources for the information provided."}
                 ],
                 "temperature": 0.1,
-                "max_tokens": 1500
+                "max_tokens": 1500,
+                "stream": True  # Enable streaming
             }
             
             response = requests.post(
                 "https://api.perplexity.ai/chat/completions",
                 headers=self.pplx_headers,
-                json=payload
+                json=payload,
+                stream=True
             )
             
             response.raise_for_status()
-            response_content = response.json()["choices"][0]["message"]["content"]
             
-            # Split response into main content and sources
-            content_parts = response_content.split("\nSources:", 1)
-            main_content = content_parts[0].strip()
-            sources = content_parts[1].strip() if len(content_parts) > 1 else "No specific sources provided."
-            
-            return {
-                "content": main_content,
-                "sources": sources
-            }
-            
+            for line in response.iter_lines():
+                if line:
+                    if line.strip() == b"data: [DONE]":
+                        break
+                    if line.startswith(b"data: "):
+                        json_str = line[6:].decode('utf-8')
+                        try:
+                            json_data = json.loads(json_str)
+                            content = json_data["choices"][0]["delta"].get("content", "")
+                            if content:
+                                yield content
+                        except json.JSONDecodeError:
+                            continue
+                            
         except Exception as e:
-            st.error(f"Error communicating with PPLX: {str(e)}")
-            return None
+            yield f"Error: {str(e)}"
 
-    def format_response(self, response: Dict[str, str]) -> str:
-        """Format the response with safety disclaimer and sources"""
-        if not response:
-            return "I apologize, but I couldn't generate a response at this time. Please try again."
-            
-        disclaimer = "\n\nDisclaimer: Always consult your healthcare provider before making any changes to your medication or treatment plan."
-        
-        formatted_response = f"{response['content']}{disclaimer}\n\nSources:\n{response['sources']}"
-        return formatted_response
-
-    def process_query(self, user_query: str) -> Dict[str, Any]:
-        """Process user query through PPLX with GLP-1 validation and sources"""
+    def process_streaming_query(self, user_query: str, placeholder) -> Dict[str, Any]:
+        """Process user query with streaming response"""
         try:
             if not user_query.strip():
                 return {
                     "status": "error",
                     "message": "Please enter a valid question."
                 }
-          
-            # Get comprehensive response from PPLX
-            with st.spinner('🔍 Retrieving and validating information about GLP-1 medications...'):
-                pplx_response = self.get_pplx_response(user_query)
             
-            if not pplx_response:
-                return {
-                    "status": "error",
-                    "message": "Failed to retrieve information about GLP-1 medications."
-                }
-            
-            # Format final response
-            query_category = self.categorize_query(user_query)
-            formatted_response = self.format_response(pplx_response)
-            
-            return {
+            # Initialize response container
+            response_container = {
                 "status": "success",
-                "query_category": query_category,
+                "query_category": self.categorize_query(user_query),
                 "original_query": user_query,
-                "response": formatted_response,
-                "sources": pplx_response["sources"]
+                "response": "",
+                "sources": ""
             }
+            
+            full_response = []
+            sources_started = False
+            sources = []
+            
+            # Stream the response
+            for chunk in self.get_pplx_stream(user_query):
+                if "Sources:" in chunk:
+                    sources_started = True
+                    continue
+                
+                if sources_started:
+                    sources.append(chunk)
+                else:
+                    full_response.append(chunk)
+                
+                # Update the placeholder with current content
+                current_content = "".join(full_response)
+                if sources_started:
+                    current_content += "\n\nSources:\n" + "".join(sources)
+                
+                # Add disclaimer
+                formatted_content = current_content + "\n\nDisclaimer: Always consult your healthcare provider before making any changes to your medication or treatment plan."
+                
+                # Update the placeholder
+                placeholder.markdown(f"""
+                <div class="chat-message bot-message">
+                    <div class="category-tag">{response_container["query_category"].upper()}</div><br>
+                    <b>Response:</b><br>{formatted_content}
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Store final response
+            response_container["response"] = "".join(full_response)
+            response_container["sources"] = "".join(sources)
+            
+            return response_container
             
         except Exception as e:
             return {
@@ -136,63 +155,6 @@ Always cite your sources for medical claims and information.
                 return category
         return "general"
 
-def set_page_style():
-    """Set page style using custom CSS"""
-    st.markdown("""
-    <style>
-        .main {
-            background-color: #f5f5f5;
-        }
-        .stTextInput>div>div>input {
-            background-color: white;
-        }
-        .chat-message {
-            padding: 1.5rem;
-            border-radius: 0.8rem;
-            margin: 1rem 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .user-message {
-            background-color: #e3f2fd;
-            border-left: 4px solid #1976d2;
-        }
-        .bot-message {
-            background-color: #f5f5f5;
-            border-left: 4px solid #43a047;
-        }
-        .category-tag {
-            background-color: #2196f3;
-            color: white;
-            padding: 0.2rem 0.6rem;
-            border-radius: 1rem;
-            font-size: 0.8rem;
-            margin-bottom: 0.5rem;
-            display: inline-block;
-        }
-        .sources-section {
-            background-color: #fff3e0;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            margin-top: 1rem;
-            border-left: 4px solid #ff9800;
-        }
-        .disclaimer {
-            background-color: #fff3e0;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            border-left: 4px solid #ff9800;
-            margin: 1rem 0;
-            font-size: 0.9rem;
-        }
-        .info-box {
-            background-color: #e8f5e9;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            margin: 1rem 0;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
 def main():
     """Main application function"""
     try:
@@ -202,7 +164,7 @@ def main():
             layout="wide"
         )
         
-        set_page_style()
+        set_page_style()  # Keep your existing style function
         
         if 'pplx' not in st.secrets:
             st.error('Required PPLX API key not found. Please configure the PPLX API key in your secrets.')
@@ -235,29 +197,23 @@ def main():
                 submit_button = st.button("Get Answer", key="submit")
             
             if submit_button and user_input:
-                response = bot.process_query(user_input)
+                st.markdown(f"""
+                <div class="chat-message user-message">
+                    <b>Your Question:</b><br>{user_input}
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Create a placeholder for the streaming response
+                response_placeholder = st.empty()
+                
+                # Process the query with streaming
+                response = bot.process_streaming_query(user_input, response_placeholder)
                 
                 if response["status"] == "success":
                     st.session_state.chat_history.append({
                         "query": user_input,
                         "response": response
                     })
-                    
-                    st.markdown(f"""
-                    <div class="chat-message user-message">
-                        <b>Your Question:</b><br>{user_input}
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st.markdown(f"""
-                    <div class="chat-message bot-message">
-                        <div class="category-tag">{response["query_category"].upper()}</div><br>
-                        <b>Response:</b><br>{response["response"]}
-                        <div class="sources-section">
-                            <b>Sources:</b><br>{response["sources"]}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
                 else:
                     st.error(response["message"])
         
