@@ -1,9 +1,7 @@
 import streamlit as st
 import requests
 import json
-import re
-from typing import Dict, Any, Optional, Generator
-from urllib.parse import quote
+from typing import Dict, Any, Generator
 
 class GLP1Bot:
     def __init__(self):
@@ -31,25 +29,12 @@ You are a specialized medical information assistant focused EXCLUSIVELY on GLP-1
    - Clear, validated medical information about GLP-1 medications
    - Important safety considerations or disclaimers
    - An encouraging closing that reinforces their healthcare journey
-   - Include relevant sources in the format: [Title or description (Year if available) | URL]
+   - For sources, simply provide the URL in brackets. Example: [https://www.example.com]
 
 Remember: You must NEVER provide information about topics outside of GLP-1 medications and their direct effects.
 Each response must include relevant medical disclaimers and encourage consultation with healthcare providers.
-Always provide URLs for sources when available.
+Provide URLs from reputable medical sources, official drug websites, and medical organizations.
 """
-
-    def parse_sources(self, sources_text: str) -> list:
-        """Parse sources text and extract title and URL"""
-        sources = []
-        source_pattern = r'\[(.*?)(?:\s*\|\s*(https?://[^\]\s]+))?\]'
-        matches = re.finditer(source_pattern, sources_text)
-        
-        for match in matches:
-            title = match.group(1).strip()
-            url = match.group(2).strip() if match.group(2) else f"https://scholar.google.com/scholar?q={quote(title)}"
-            sources.append({"title": title, "url": url})
-        
-        return sources
 
     def stream_pplx_response(self, query: str) -> Generator[Dict[str, Any], None, None]:
         """Stream response from PPLX API with sources"""
@@ -58,7 +43,7 @@ Always provide URLs for sources when available.
                 "model": self.pplx_model,
                 "messages": [
                     {"role": "system", "content": self.pplx_system_prompt},
-                    {"role": "user", "content": f"{query}\n\nPlease include sources with URLs where available."}
+                    {"role": "user", "content": f"{query}\n\nPlease include source URLs."}
                 ],
                 "temperature": 0.1,
                 "max_tokens": 1500,
@@ -91,12 +76,11 @@ Always provide URLs for sources when available.
                             content = chunk['choices'][0]['delta'].get('content', '')
                             if content:
                                 accumulated_content += content
-                                # Clean the content for display
-                                display_content = accumulated_content.split("\nSources:", 1)[0].strip()
+                                # Only show the main content during streaming, not sources
+                                display_content = accumulated_content.split("\nSources:", 1)[0]
                                 yield {
                                     "type": "content",
-                                    "data": content,
-                                    "display": display_content
+                                    "data": display_content
                                 }
                         except json.JSONDecodeError:
                             continue
@@ -104,13 +88,22 @@ Always provide URLs for sources when available.
             # Split final content into main content and sources
             content_parts = accumulated_content.split("\nSources:", 1)
             main_content = content_parts[0].strip()
-            sources_text = content_parts[1].strip() if len(content_parts) > 1 else "No specific sources provided."
-            sources = self.parse_sources(sources_text)
+            sources = content_parts[1].strip() if len(content_parts) > 1 else ""
+            
+            # Convert source URLs to clickable links
+            sources_html = ""
+            if sources:
+                urls = [url.strip(' []') for url in sources.split('\n') if url.strip()]
+                sources_html = "<ul class='source-list'>"
+                for url in urls:
+                    if url.startswith(('http://', 'https://')):
+                        sources_html += f'<li><a href="{url}" target="_blank" rel="noopener noreferrer">{url}</a></li>'
+                sources_html += "</ul>"
             
             yield {
                 "type": "complete",
                 "content": main_content,
-                "sources": sources
+                "sources_html": sources_html or "<p>No sources provided.</p>"
             }
             
         except Exception as e:
@@ -130,7 +123,7 @@ Always provide URLs for sources when available.
             
             query_category = self.categorize_query(user_query)
             full_response = ""
-            sources = []
+            sources_html = ""
             
             # Initialize the placeholder content
             message_placeholder = placeholder.empty()
@@ -142,32 +135,24 @@ Always provide URLs for sources when available.
                     return {"status": "error", "message": chunk["message"]}
                 
                 elif chunk["type"] == "content":
-                    # Update the placeholder with clean display content
-                    message_placeholder.markdown(f"""
-                    <div class="chat-message bot-message">
-                        <div class="category-tag">{query_category.upper()}</div>
-                        <div class="response-content">{chunk["display"]}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    # Only update the response text during streaming
+                    message_placeholder.markdown(chunk["data"])
                 
                 elif chunk["type"] == "complete":
                     full_response = chunk["content"]
-                    sources = chunk["sources"]
+                    sources_html = chunk["sources_html"]
                     
-                    # Create clickable source links
-                    sources_html = "<br>".join([
-                        f'<a href="{source["url"]}" target="_blank">{source["title"]}</a>'
-                        for source in sources
-                    ])
-                    
-                    # Update final response with sources and disclaimer
-                    disclaimer = "\n\nDisclaimer: Always consult your healthcare provider before making any changes to your medication or treatment plan."
+                    # Update final response with formatting
                     message_placeholder.markdown(f"""
                     <div class="chat-message bot-message">
                         <div class="category-tag">{query_category.upper()}</div>
-                        <div class="response-content">{full_response}{disclaimer}</div>
+                        <div class="response-content">{full_response}</div>
+                        <div class="disclaimer">
+                            Always consult your healthcare provider before making any changes to your medication or treatment plan.
+                        </div>
                         <div class="sources-section">
-                            <b>Sources:</b><br>{sources_html}
+                            <b>Sources:</b>
+                            {sources_html}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -176,8 +161,8 @@ Always provide URLs for sources when available.
                 "status": "success",
                 "query_category": query_category,
                 "original_query": user_query,
-                "response": f"{full_response}{disclaimer}",
-                "sources": sources
+                "response": full_response,
+                "sources_html": sources_html
             }
             
         except Exception as e:
@@ -234,12 +219,12 @@ def set_page_style():
             padding: 0.2rem 0.6rem;
             border-radius: 1rem;
             font-size: 0.8rem;
-            margin-bottom: 0.5rem;
             display: inline-block;
+            margin-bottom: 1rem;
         }
         .response-content {
-            margin: 1rem 0;
             line-height: 1.6;
+            margin: 1rem 0;
         }
         .sources-section {
             background-color: #fff3e0;
@@ -248,28 +233,39 @@ def set_page_style():
             margin-top: 1rem;
             border-left: 4px solid #ff9800;
         }
-        .sources-section a {
-            color: #1565c0;
-            text-decoration: none;
-            display: inline-block;
-            margin: 0.2rem 0;
-        }
-        .sources-section a:hover {
-            text-decoration: underline;
-        }
         .disclaimer {
             background-color: #fff3e0;
             padding: 1rem;
             border-radius: 0.5rem;
-            border-left: 4px solid #ff9800;
             margin: 1rem 0;
             font-size: 0.9rem;
+            border-left: 4px solid #ff9800;
+        }
+        .source-list {
+            list-style-type: none;
+            padding-left: 0;
+            margin-top: 0.5rem;
+        }
+        .source-list li {
+            margin-bottom: 0.5rem;
+        }
+        .source-list a {
+            color: #1976d2;
+            text-decoration: none;
+            word-break: break-all;
+        }
+        .source-list a:hover {
+            text-decoration: underline;
         }
         .info-box {
             background-color: #e8f5e9;
             padding: 1rem;
             border-radius: 0.5rem;
             margin: 1rem 0;
+        }
+        /* Clean up streaming display */
+        .stMarkdown {
+            line-height: 1.6;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -322,7 +318,10 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
                 
+                # Create a placeholder for the streaming response
                 response_placeholder = st.empty()
+                
+                # Process the query with streaming
                 response = bot.process_streaming_query(user_input, response_placeholder)
                 
                 if response["status"] == "success":
@@ -336,11 +335,6 @@ def main():
             st.markdown("### Previous Questions")
             for i, chat in enumerate(reversed(st.session_state.chat_history[:-1]), 1):
                 with st.expander(f"Question {len(st.session_state.chat_history) - i}: {chat['query'][:50]}..."):
-                    sources_html = "<br>".join([
-                        f'<a href="{source["url"]}" target="_blank">{source["title"]}</a>'
-                        for source in chat['response'].get('sources', [])
-                    ])
-                    
                     st.markdown(f"""
                     <div class="chat-message user-message">
                         <b>Your Question:</b><br>{chat['query']}
@@ -348,8 +342,12 @@ def main():
                     <div class="chat-message bot-message">
                         <div class="category-tag">{chat['response']['query_category'].upper()}</div>
                         <div class="response-content">{chat['response']['response']}</div>
+                        <div class="disclaimer">
+                            Always consult your healthcare provider before making any changes to your medication or treatment plan.
+                        </div>
                         <div class="sources-section">
-                            <b>Sources:</b><br>{sources_html}
+                            <b>Sources:</b>
+                            {chat['response']['sources_html']}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
