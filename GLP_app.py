@@ -33,7 +33,7 @@ class GLP1Bot:
                 "model": self.pplx_model,
                 "messages": [
                     {"role": "system", "content": self.pplx_system_prompt},
-                    {"role": "user", content: f"{query}\n\nPlease include sources for the information provided."}
+                    {"role": "user", "content": f"{query}\n\nPlease include sources for the information provided."}
                 ],
                 "temperature": 0.1,
                 "max_tokens": 1500
@@ -150,7 +150,7 @@ def set_page_style():
     .category-tag { background-color: #2196f3; color: white; padding: 0.2rem 0.6rem; border-radius: 1rem; font-size: 0.8rem; margin-bottom: 0.5rem; display: inline-block; }
     .sources-section { background-color: #fff3e0; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; border-left: 4px solid #ff9800; }
     .disclaimer { background-color: #fff3e0; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #ff9800; margin: 1rem 0; font-size: 0.9rem; }
-    .info-box { background-color: #e8f5e9; padding: 1rem; border-radius:... 0.5rem; margin: 1rem 0; }
+    .info-box { background-color: #e8f5e9; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0; }
     </style>
     """, unsafe_allow_html=True)
 
