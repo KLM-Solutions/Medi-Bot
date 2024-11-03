@@ -29,25 +29,24 @@ You are a specialized medical information assistant focused EXCLUSIVELY on GLP-1
    - Clear, validated medical information about GLP-1 medications
    - Important safety considerations or disclaimers
    - An encouraging closing that reinforces their healthcare journey
-   - Include relevant sources for the information provided, using the format: [Source: Title or description (Year if available)]
+   - Include relevant sources for the information provided
 
 Remember: You must NEVER provide information about topics outside of GLP-1 medications and their direct effects.
 Each response must include relevant medical disclaimers and encourage consultation with healthcare providers.
-Always cite your sources for medical claims and information.
 """
 
     def stream_pplx_response(self, query: str) -> Generator[Dict[str, Any], None, None]:
-        """Stream response from PPLX API with sources"""
+        """Stream response from PPLX API"""
         try:
             payload = {
                 "model": self.pplx_model,
                 "messages": [
                     {"role": "system", "content": self.pplx_system_prompt},
-                    {"role": "user", "content": f"{query}\n\nPlease include sources for the information provided."}
+                    {"role": "user", "content": query}
                 ],
                 "temperature": 0.1,
                 "max_tokens": 1500,
-                "stream": True  # Enable streaming
+                "stream": True
             }
             
             response = requests.post(
@@ -65,7 +64,7 @@ Always cite your sources for medical claims and information.
                     line = line.decode('utf-8')
                     if line.startswith('data: '):
                         try:
-                            json_str = line[6:]  # Remove 'data: ' prefix
+                            json_str = line[6:]
                             if json_str.strip() == '[DONE]':
                                 break
                             
@@ -87,7 +86,7 @@ Always cite your sources for medical claims and information.
             # Split final content into main content and sources
             content_parts = accumulated_content.split("\nSources:", 1)
             main_content = content_parts[0].strip()
-            sources = content_parts[1].strip() if len(content_parts) > 1 else "No specific sources provided."
+            sources = content_parts[1].strip() if len(content_parts) > 1 else ""
             
             yield {
                 "type": "complete",
@@ -114,7 +113,7 @@ Always cite your sources for medical claims and information.
             full_response = ""
             sources = ""
             
-            # Initialize the placeholder content
+            # Create a single container for the streaming response
             message_placeholder = placeholder.empty()
             
             # Stream the response
@@ -125,29 +124,28 @@ Always cite your sources for medical claims and information.
                 
                 elif chunk["type"] == "content":
                     full_response = chunk["accumulated"]
-                    # Update the placeholder with the accumulated text
-                    message_placeholder.markdown(f"""
-                    <div class="chat-message bot-message">
-                        <div class="category-tag">{query_category.upper()}</div><br>
-                        <b>Response:</b><br>{full_response}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    # Update the content in place
+                    message_placeholder.markdown(full_response)
                 
                 elif chunk["type"] == "complete":
                     full_response = chunk["content"]
                     sources = chunk["sources"]
                     
-                    # Update final response with sources and disclaimer
                     disclaimer = "\n\nDisclaimer: Always consult your healthcare provider before making any changes to your medication or treatment plan."
-                    message_placeholder.markdown(f"""
+                    
+                    # Final update with complete response
+                    complete_response = f"""
                     <div class="chat-message bot-message">
-                        <div class="category-tag">{query_category.upper()}</div><br>
-                        <b>Response:</b><br>{full_response}{disclaimer}
+                        <div class="category-tag">{query_category.upper()}</div>
+                        {full_response}
+                        <p class="disclaimer">{disclaimer}</p>
                         <div class="sources-section">
-                            <b>Sources:</b><br>{sources}
+                            <strong>Sources:</strong><br>
+                            {sources}
                         </div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """
+                    message_placeholder.markdown(complete_response, unsafe_allow_html=True)
             
             return {
                 "status": "success",
@@ -165,7 +163,6 @@ Always cite your sources for medical claims and information.
 
     def categorize_query(self, query: str) -> str:
         """Categorize the user query"""
-        # [Previous categorize_query implementation remains the same]
         categories = {
             "dosage": ["dose", "dosage", "how to take", "when to take", "injection", "administration"],
             "side_effects": ["side effect", "adverse", "reaction", "problem", "issues", "symptoms"],
@@ -182,8 +179,6 @@ Always cite your sources for medical claims and information.
                 return category
         return "general"
 
-
-        
 def set_page_style():
     """Set page style using custom CSS"""
     st.markdown("""
@@ -250,7 +245,7 @@ def main():
             layout="wide"
         )
         
-        set_page_style()  # Your existing style function remains the same
+        set_page_style()
         
         if 'pplx' not in st.secrets:
             st.error('Required PPLX API key not found. Please configure the PPLX API key in your secrets.')
@@ -311,8 +306,8 @@ def main():
                         <b>Your Question:</b><br>{chat['query']}
                     </div>
                     <div class="chat-message bot-message">
-                        <div class="category-tag">{chat['response']['query_category'].upper()}</div><br>
-                        <b>Response:</b><br>{chat['response']['response']}
+                        <div class="category-tag">{chat['response']['query_category'].upper()}</div>
+                        {chat['response']['response']}
                         <div class="sources-section">
                             <b>Sources:</b><br>{chat['response']['sources']}
                         </div>
