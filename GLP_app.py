@@ -181,6 +181,62 @@ Always cite your sources for medical claims and information.
             if any(keyword in query_lower for keyword in keywords):
                 return category
         return "general"
+def set_page_style():
+    """Set page style using custom CSS"""
+    st.markdown("""
+    <style>
+        .main {
+            background-color: #f5f5f5;
+        }
+        .stTextInput>div>div>input {
+            background-color: white;
+        }
+        .chat-message {
+            padding: 1.5rem;
+            border-radius: 0.8rem;
+            margin: 1rem 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            border-left: 4px solid #1976d2;
+        }
+        .bot-message {
+            background-color: #f5f5f5;
+            border-left: 4px solid #43a047;
+        }
+        .category-tag {
+            background-color: #2196f3;
+            color: white;
+            padding: 0.2rem 0.6rem;
+            border-radius: 1rem;
+            font-size: 0.8rem;
+            margin-bottom: 0.5rem;
+            display: inline-block;
+        }
+        .sources-section {
+            background-color: #fff3e0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+            border-left: 4px solid #ff9800;
+        }
+        .disclaimer {
+            background-color: #fff3e0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border-left: 4px solid #ff9800;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }
+        .info-box {
+            background-color: #e8f5e9;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
 def main():
     """Main application function"""
