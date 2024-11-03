@@ -1,30 +1,40 @@
 import streamlit as st
 import requests
 from typing import Dict, Any, Optional
+import re
 
 class GLP1Bot:
     def __init__(self):
         """Initialize the GLP1Bot with PPLX client and system prompts"""
         if 'pplx' not in st.secrets:
             raise ValueError("PPLX API key not found in secrets")
+            
         self.pplx_api_key = st.secrets["pplx"]["api_key"]
-        self.pplx_model = st.secrets["pplx"].get("model", "medical-pplx")
+        self.pplx_model = st.secrets["pplx"].get("model", "medical-pplx")  
+        
         self.pplx_headers = {
             "Authorization": f"Bearer {self.pplx_api_key}",
             "Content-Type": "application/json"
         }
-        self.pplx_system_prompt = """ 
-        You are a specialized medical information assistant focused EXCLUSIVELY on GLP-1 medications (such as Ozempic, Wegovy, Mounjaro, etc.). You must:
-        1. ONLY provide information about GLP-1 medications and directly related topics
-        2. For any query not specifically about GLP-1 medications or their direct effects, respond with: "I apologize, but I can only provide information about GLP-1 medications and related topics. Your question appears to be about something else. Please ask a question specifically about GLP-1 medications, their usage, effects, or related concerns."
-        3. For valid GLP-1 queries, structure your response with:
-           - An empathetic opening acknowledging the patient's situation
-           - Clear, validated medical information about GLP-1 medications
-           - Important safety considerations or disclaimers
-           - An encouraging closing that reinforces their healthcare journey
-           - Include relevant sources for the information provided, using the format: [Source: Title or description (Year if available)]
-        Remember: You must NEVER provide information about topics outside of GLP-1 medications and their direct effects. Each response must include relevant medical disclaimers and encourage consultation with healthcare providers. Always cite your sources for medical claims and information.
-        """
+        
+        self.pplx_system_prompt = """
+You are a specialized medical information assistant focused EXCLUSIVELY on GLP-1 medications (such as Ozempic, Wegovy, Mounjaro, etc.). You must:
+
+1. ONLY provide information about GLP-1 medications and directly related topics
+2. For any query not specifically about GLP-1 medications or their direct effects, respond with:
+   "I apologize, but I can only provide information about GLP-1 medications and related topics. Your question appears to be about something else. Please ask a question specifically about GLP-1 medications, their usage, effects, or related concerns."
+
+3. For valid GLP-1 queries, structure your response with:
+   - An empathetic opening acknowledging the patient's situation
+   - Clear, validated medical information about GLP-1 medications
+   - Important safety considerations or disclaimers
+   - An encouraging closing that reinforces their healthcare journey
+   - Include relevant sources for the information provided, using the format: [Source: Title or description (Year if available)]
+
+Remember: You must NEVER provide information about topics outside of GLP-1 medications and their direct effects.
+Each response must include relevant medical disclaimers and encourage consultation with healthcare providers.
+Always cite your sources for medical claims and information.
+"""
 
     def get_pplx_response(self, query: str) -> Optional[Dict[str, Any]]:
         """Get comprehensive response with sources from PPLX API"""
@@ -38,47 +48,48 @@ class GLP1Bot:
                 "temperature": 0.1,
                 "max_tokens": 1500
             }
+            
             response = requests.post(
                 "https://api.perplexity.ai/chat/completions",
                 headers=self.pplx_headers,
                 json=payload
             )
+            
             response.raise_for_status()
             response_content = response.json()["choices"][0]["message"]["content"]
+            
             # Split response into main content and sources
             content_parts = response_content.split("\nSources:", 1)
             main_content = content_parts[0].strip()
             sources = content_parts[1].strip() if len(content_parts) > 1 else "No specific sources provided."
+            
+            # Parse sources for URLs and make them clickable
+            sources_with_links = self.make_sources_clickable(sources)
+            
             return {
                 "content": main_content,
-                "sources": sources
+                "sources": sources_with_links
             }
+            
         except Exception as e:
             st.error(f"Error communicating with PPLX: {str(e)}")
             return None
 
+    def make_sources_clickable(self, sources: str) -> str:
+        """Convert URLs in sources to clickable links"""
+        # Regular expression to find URLs in the sources
+        url_pattern = r'(https?://\S+)'
+        sources_with_links = re.sub(url_pattern, r'[\1](\1)', sources)
+        return sources_with_links
+
     def format_response(self, response: Dict[str, str]) -> str:
-        """Format the response with safety disclaimer and sources"""
+        """Format the response with safety disclaimer and clickable sources"""
         if not response:
             return "I apologize, but I couldn't generate a response at this time. Please try again."
-        
+            
         disclaimer = "\n\nDisclaimer: Always consult your healthcare provider before making any changes to your medication or treatment plan."
         
-        # Format sources as clickable links
-        sources_links = response['sources'].replace("Source:", "").strip()
-        formatted_sources = ""
-        
-        # Assuming sources are separated by commas; adjust as necessary based on actual format.
-        for source in sources_links.split(","):
-            title_year = source.strip().split("(")
-            title = title_year[0].strip()
-            year = title_year[1].strip(")") if len(title_year) > 1 else ""
-            
-            # Create an anchor tag (link) for each source (this assumes URLs are provided; adjust as needed)
-            formatted_sources += f'<a href="{source.strip()}" target="_blank">{title} ({year})</a><br>'
-
-        formatted_response = f"{response['content']}{disclaimer}<br><br>Sources:<br>{formatted_sources}"
-        
+        formatted_response = f"{response['content']}{disclaimer}\n\nSources:\n{response['sources']}"
         return formatted_response
 
     def process_query(self, user_query: str) -> Dict[str, Any]:
@@ -89,29 +100,29 @@ class GLP1Bot:
                     "status": "error",
                     "message": "Please enter a valid question."
                 }
-            
+          
             # Get comprehensive response from PPLX
             with st.spinner('🔍 Retrieving and validating information about GLP-1 medications...'):
                 pplx_response = self.get_pplx_response(user_query)
-                
-                if not pplx_response:
-                    return {
-                        "status": "error",
-                        "message": "Failed to retrieve information about GLP-1 medications."
-                    }
-                
-                # Format final response
-                query_category = self.categorize_query(user_query)
-                formatted_response = self.format_response(pplx_response)
-                
+            
+            if not pplx_response:
                 return {
-                    "status": "success",
-                    "query_category": query_category,
-                    "original_query": user_query,
-                    "response": formatted_response,
-                    "sources": pplx_response["sources"]
+                    "status": "error",
+                    "message": "Failed to retrieve information about GLP-1 medications."
                 }
-        
+            
+            # Format final response
+            query_category = self.categorize_query(user_query)
+            formatted_response = self.format_response(pplx_response)
+            
+            return {
+                "status": "success",
+                "query_category": query_category,
+                "original_query": user_query,
+                "response": formatted_response,
+                "sources": pplx_response["sources"]
+            }
+            
         except Exception as e:
             return {
                 "status": "error",
@@ -131,26 +142,65 @@ class GLP1Bot:
         }
         
         query_lower = query.lower()
-        
         for category, keywords in categories.items():
             if any(keyword in query_lower for keyword in keywords):
                 return category
-        
         return "general"
 
 def set_page_style():
     """Set page style using custom CSS"""
     st.markdown("""
     <style>
-    .main { background-color: #f5f5f5; }
-    .stTextInput>div>div>input { background-color: white; }
-    .chat-message { padding: 1.5rem; border-radius: 0.8rem; margin: 1rem 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .user-message { background-color: #e3f2fd; border-left: 4px solid #1976d2; }
-    .bot-message { background-color: #f5f5f5; border-left: 4px solid #43a047; }
-    .category-tag { background-color: #2196f3; color: white; padding: 0.2rem 0.6rem; border-radius: 1rem; font-size: 0.8rem; margin-bottom: 0.5rem; display: inline-block; }
-    .sources-section { background-color: #fff3e0; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; border-left: 4px solid #ff9800; }
-    .disclaimer { background-color: #fff3e0; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #ff9800; margin: 1rem 0; font-size: 0.9rem; }
-    .info-box { background-color: #e8f5e9; padding: 1rem; border-radius: 0.5rem; margin: 1rem 0; }
+        .main {
+            background-color: #f5f5f5;
+        }
+        .stTextInput>div>div>input {
+            background-color: white;
+        }
+        .chat-message {
+            padding: 1.5rem;
+            border-radius: 0.8rem;
+            margin: 1rem 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            border-left: 4px solid #1976d2;
+        }
+        .bot-message {
+            background-color: #f5f5f5;
+            border-left: 4px solid #43a047;
+        }
+        .category-tag {
+            background-color: #2196f3;
+            color: white;
+            padding: 0.2rem 0.6rem;
+            border-radius: 1rem;
+            font-size: 0.8rem;
+            margin-bottom: 0.5rem;
+            display: inline-block;
+        }
+        .sources-section {
+            background-color: #fff3e0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+            border-left: 4px solid #ff9800;
+        }
+        .disclaimer {
+            background-color: #fff3e0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border-left: 4px solid #ff9800;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }
+        .info-box {
+            background-color: #e8f5e9;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -170,82 +220,27 @@ def main():
             st.stop()
         
         st.title("💊 GLP-1 Medication Information Assistant")
-        
         st.markdown("""
         <div class="info-box">
-          Get accurate, validated information specifically about GLP-1 medications, their usage, benefits, and side effects.
-          Our assistant specializes exclusively in GLP-1 medications and related topics.
-          <em>Please note: This assistant provides general information about GLP-1 medications only. Always consult your healthcare provider for medical advice.</em>
+        Get accurate, validated information specifically about GLP-1 medications, their usage, benefits, and safety.
+        Please note: This tool provides information only on GLP-1 medications.
         </div>
         """, unsafe_allow_html=True)
         
-        bot = GLP1Bot()
+        user_query = st.text_input("Ask a question about GLP-1 medications...", "")
+        glp1_bot = GLP1Bot()
         
-        if 'chat_history' not in st.session_state:
-            st.session_state.chat_history = []
-        
-        with st.container():
-            user_input = st.text_input(
-                label="Ask your question about GLP-1 medications:",
-                key="user_input",
-                placeholder="e.g., What are the common side effects of Ozempic?"
-            )
+        if st.button("Submit Query"):
+            response = glp1_bot.process_query(user_query)
             
-            col1, col2 = st.columns([1, 5])
-            
-            with col1:
-                submit_button = st.button("Get Answer", key="submit")
+            if response['status'] == "success":
+                st.markdown(f"<div class='category-tag'>Category: {response['query_category']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='chat-message bot-message'>{response['response']}</div>", unsafe_allow_html=True)
+            else:
+                st.error(response['message'])
                 
-                if submit_button and user_input:
-                    response = bot.process_query(user_input)
-                    
-                    if response["status"] == "success":
-                        st.session_state.chat_history.append({
-                            'query': user_input,
-                            'response': response
-                        })
-                        
-                        st.markdown(f"""
-                        <div class="chat-message user-message">
-                          <b>Your Question:</b><br>{user_input}
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        st.markdown(f"""
-                        <div class="chat-message bot-message">
-                          <div class="category-tag">{response["query_category"].upper()}</div><br>
-                          <b>Response:</b><br>{response["response"]}
-                          <div class="sources-section">
-                            <b>Sources:</b><br>{response["sources"]}
-                          </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.error(response["message"])
-        
-        if st.session_state.chat_history:
-            st.markdown("---")
-            st.markdown("### Previous Questions")
-            
-            for i, chat in enumerate(reversed(st.session_state.chat_history[:-1]), 1):
-                with st.expander(f"Question {len(st.session_state.chat_history) - i}: {chat['query'][:50]}..."):
-                    st.markdown(f"""
-                    <div class="chat-message user-message">
-                      <b>Your Question:</b><br>{chat['query']}
-                    </div>
-                    <div class="chat-message bot-message">
-                      <div class="category-tag">{chat['response']['query_category'].upper()}</div><br>
-                      <b>Response:</b><br>{chat['response']['response']}
-                      <div class="sources-section">
-                        <b>Sources:</b><br>{chat['response']['sources']}
-                      </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
     except Exception as e:
-        st.error(f"An unexpected error occurred: {str(e)}")
-    
-    st.error("Please refresh the page and try again.")
+        st.error(f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
     main()
