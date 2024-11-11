@@ -20,6 +20,7 @@ class GLP1Bot:
             "Content-Type": "application/json"
         }
         
+        
         self.pplx_system_prompt = """
 You are a specialized medical information assistant focused EXCLUSIVELY on GLP-1 medications (such as Ozempic, Wegovy, Mounjaro, etc.). You must:
 
