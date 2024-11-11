@@ -6,6 +6,16 @@ from typing import Dict, Any, Optional, Generator, List
 import os
 from dotenv import load_dotenv
 
+import streamlit as st
+
+# Debug code to check secrets
+if 'PPLX_API_KEY' in st.secrets:
+    st.write("PPLX_API_KEY is configured!")
+    # Print first few characters to verify it's loaded (don't print full key)
+    st.write(f"Key starts with: {st.secrets['PPLX_API_KEY'][:4]}...")
+else:
+    st.write("Available secret keys:", list(st.secrets.keys()))
+
 class GLP1Bot:
     def __init__(self):
         """Initialize the GLP1Bot with PPLX client and system prompts"""
